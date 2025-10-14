@@ -1,3 +1,4 @@
+// index.js
 const { Client, GatewayIntentBits, Collection, Colors, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const gradient = require('gradient-string');
 const chalk = require('chalk');
@@ -124,40 +125,67 @@ client.once('ready', async () => {
     console.log(boldText(gradientText("━━━━━━━━━━[ READY FOR USE ✅ ]━━━━━━━━━━━━", 'lime')));
 });
 
-// --- Button interaction handler ---
+// --- Button interaction handler (fixed) ---
 client.on('interactionCreate', async interaction => {
-    if (interaction.isButton()) {
-        const member = interaction.member;
-        const rolesToAdd = [];
+    if (!interaction.isButton()) return;
 
-        // PVBR
-        if (interaction.customId === 'secret_role') rolesToAdd.push('1427517229129404477');
-        if (interaction.customId === 'godly_role') rolesToAdd.push('1427517104780869713');
+    try {
+        const member = await interaction.guild.members.fetch(interaction.user.id);
 
-        // GAG
-        if (interaction.customId === 'grand_master') rolesToAdd.push('1427560078411563059');
-        if (interaction.customId === 'great_pumpkin') rolesToAdd.push('1427560648673595402');
-        if (interaction.customId === 'levelup_lollipop') rolesToAdd.push('1427560940068536320');
+        const rolesToToggle = [];
 
-        try {
-            for (const roleId of rolesToAdd) {
-                if (member.roles.cache.has(roleId)) await member.roles.remove(roleId);
-                else await member.roles.add(roleId);
+        // PVBR roles
+        if (interaction.customId === 'secret_role') rolesToToggle.push('1427517229129404477');
+        if (interaction.customId === 'godly_role') rolesToToggle.push('1427517104780869713');
+
+        // GAG roles
+        if (interaction.customId === 'grand_master') rolesToToggle.push('1427560078411563059');
+        if (interaction.customId === 'great_pumpkin') rolesToToggle.push('1427560648673595402');
+        if (interaction.customId === 'levelup_lollipop') rolesToToggle.push('1427560940068536320');
+
+        let updatedRoles = [];
+        for (const roleId of rolesToToggle) {
+            const role = interaction.guild.roles.cache.get(roleId);
+            if (!role) continue;
+
+            // Check bot hierarchy
+            const botMember = await interaction.guild.members.fetch(client.user.id);
+            if (role.position >= botMember.roles.highest.position) {
+                console.warn(`Cannot assign/remove role ${role.name}, bot role too low.`);
+                continue;
             }
-            await interaction.reply({ content: `✅ Role(s) updated successfully!`, ephemeral: true });
-        } catch (err) {
-            console.error('❌ Error assigning/removing roles:', err);
-            await interaction.reply({ content: '❌ Failed to update roles.', ephemeral: true });
-        }
-        return;
-    }
 
-    // Slash command handler
+            if (member.roles.cache.has(roleId)) {
+                await member.roles.remove(role).catch(err => console.error(`Failed to remove role ${role.name}:`, err));
+                updatedRoles.push(`Removed ${role.name}`);
+            } else {
+                await member.roles.add(role).catch(err => console.error(`Failed to add role ${role.name}:`, err));
+                updatedRoles.push(`Added ${role.name}`);
+            }
+        }
+
+        if (updatedRoles.length === 0) {
+            await interaction.reply({ content: '❌ No roles were updated. Check bot permissions and role hierarchy.', ephemeral: true });
+        } else {
+            await interaction.reply({ content: `✅ Updated roles:\n${updatedRoles.join('\n')}`, ephemeral: true });
+        }
+
+    } catch (err) {
+        console.error('❌ Error handling button interaction:', err);
+        await interaction.reply({ content: '❌ Failed to update roles.', ephemeral: true });
+    }
+});
+
+// --- Slash command handler ---
+client.on('interactionCreate', async interaction => {
     if (!interaction.isCommand()) return;
     const command = client.slashCommands.get(interaction.commandName);
     if (command) {
         try { await command.execute(interaction); } 
-        catch (error) { console.error(`❌ Error executing slash command [${interaction.commandName}]:`, error); await interaction.reply({ content: `❌ | ${error.message}`, ephemeral: true }); }
+        catch (error) { 
+            console.error(`❌ Error executing slash command [${interaction.commandName}]:`, error); 
+            await interaction.reply({ content: `❌ | ${error.message}`, ephemeral: true }); 
+        }
     }
 });
 
