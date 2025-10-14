@@ -11,7 +11,12 @@ const { logDiscordMessage, logCommandExecution } = require('./utils/logger');
 
 // --- Discord client setup ---
 const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildMembers
+    ]
 });
 
 client.commands = new Collection();
@@ -53,7 +58,7 @@ global.cc = {
         try {
             delete require.cache[require.resolve(`./modules/commands/${commandName}.js`)];
             const reloadedCommand = require(`./modules/commands/${commandName}.js`);
-            client.commands.set(reloadedCommand.config.name, reloadedCommand);
+            client.commands.set(reloadedCommand.config?.name || reloadedCommand.data?.name, reloadedCommand);
             console.log(boldText(gradientText(`[ ${commandName} ] Command reloaded successfully.`, 'lime')));
             return true;
         } catch (error) {
@@ -80,10 +85,10 @@ client.once('ready', async () => {
     console.log(gradient.cristal(`║ Prefix: ${config.prefix}`));  
     console.log(gradient.cristal(`╚════════════════════`));          
 
-    // --- Global slash command registration ---
+    // --- Register global slash commands ---
     try {
         console.log(gradientText("\n🧹 Clearing old global slash commands...", 'cyan'));
-        await client.application.commands.set([]); // Clears all old global commands
+        await client.application.commands.set([]); // Clear old global commands
 
         const commands = client.slashCommands.map(command => {
             if (command.data) {
@@ -98,10 +103,21 @@ client.once('ready', async () => {
 
         console.log(gradientText(`🚀 Registering ${commands.length} global commands...`, 'lime'));
         await client.application.commands.set(commands);
-
         console.log(boldText(gradientText("\n✅ Global slash commands registered successfully!", 'lime')));
     } catch (error) {
         console.error(boldText(gradientText(`❌ Failed to register global commands: ${error.message}`, 'red')));
+    }
+
+    // --- Auto Ping PVBR Stock Role Channel ---
+    try {
+        const stockChannel = await client.channels.fetch('1426904690343284847'); // your channel ID
+        if (stockChannel && stockChannel.isTextBased()) {
+            stockChannel.send({
+                content: `📢 **Choose your stock alert role:**\nReact with the role you want to get notifications for!`
+            });
+        }
+    } catch (err) {
+        console.error('❌ Failed to send auto-ping message to stock channel:', err);
     }
 
     console.log(boldText(gradientText("━━━━━━━━━━[ READY FOR USE ✅ ]━━━━━━━━━━━━", 'lime')));
@@ -123,17 +139,16 @@ client.on('messageCreate', async (message) => {
 
     const args = content.split(/\s+/);
     const commandName = args.shift()?.toLowerCase();
-    const command = client.commands.get(commandName) || client.commands.find(cmd => cmd.config.aliases?.includes(commandName));
+    const command = client.commands.get(commandName) || client.commands.find(cmd => cmd.config?.aliases?.includes(commandName));
 
     if (command) {
-        if ((command.config.usePrefix === false) || (command.config.usePrefix && hasPrefix) || isMention) {
-            const cooldownKey = `${message.author.id}-${command.config.name}`;
-            const cooldownTime = command.config.cooldown || 0;
+        if ((command.config?.usePrefix === false) || (command.config?.usePrefix && hasPrefix) || isMention) {
+            const cooldownKey = `${message.author.id}-${command.config?.name}`;
+            const cooldownTime = command.config?.cooldown || 0;
 
             if (cooldowns.has(cooldownKey)) {
                 const expirationTime = cooldowns.get(cooldownKey) + cooldownTime * 1000;
                 const now = Date.now();
-
                 if (now < expirationTime) {
                     const remainingTime = ((expirationTime - now) / 1000).toFixed(1);
                     const cooldownEmbed = {
@@ -167,7 +182,6 @@ client.on('messageCreate', async (message) => {
 // --- Slash commands handling ---
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isCommand()) return;
-
     const command = client.slashCommands.get(interaction.commandName);
     if (command) {
         try {
@@ -191,6 +205,5 @@ client.login(config.token);
 const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
-
 app.get('/', (req, res) => res.send('Bot is running!'));
 app.listen(PORT, () => console.log(`Web server listening on port ${PORT}`));
