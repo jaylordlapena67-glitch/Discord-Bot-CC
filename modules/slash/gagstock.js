@@ -1,8 +1,22 @@
 const { SlashCommandBuilder, EmbedBuilder, PermissionsBitField } = require("discord.js");
-const https = require("https");
+const axios = require("axios");
 const { getData, setData } = require("../../../database.js");
 
-const gagStock = {
+module.exports = {
+    data: new SlashCommandBuilder()
+        .setName("gagstock")
+        .setDescription("Grow A Garden auto-stock updates (Admin only)")
+        .addStringOption(option =>
+            option.setName("action")
+                .setDescription("Choose on, off, or check")
+                .setRequired(true)
+                .addChoices(
+                    { name: "On", value: "on" },
+                    { name: "Off", value: "off" },
+                    { name: "Check", value: "check" }
+                )
+        ),
+
     autoStockTimers: {},
 
     ITEM_EMOJI: {
@@ -21,34 +35,14 @@ const gagStock = {
         return this.ITEM_EMOJI[name] || "❔";
     },
 
-    fetchStock() {
-        return new Promise((resolve, reject) => {
-            const options = {
-                method: "GET",
-                hostname: "growagarden.gg",
-                path: "/api/stock",
-                headers: {
-                    accept: "*/*",
-                    "content-type": "application/json",
-                    referer: "https://growagarden.gg/stocks"
-                }
-            };
-
-            const req = https.request(options, res => {
-                const chunks = [];
-                res.on("data", chunk => chunks.push(chunk));
-                res.on("end", () => {
-                    try {
-                        resolve(JSON.parse(Buffer.concat(chunks).toString()));
-                    } catch (e) {
-                        reject(e);
-                    }
-                });
-            });
-
-            req.on("error", reject);
-            req.end();
-        });
+    async fetchStock() {
+        try {
+            const { data } = await axios.get("https://growagarden.gg/api/stock");
+            return data.items || [];
+        } catch (err) {
+            console.error("Failed to fetch GAG stock:", err);
+            return [];
+        }
     },
 
     formatItems(items) {
@@ -63,76 +57,75 @@ const gagStock = {
         const restockMinutes = [1,6,11,16,21,26,31,36,41,46,51,56];
         const nextM = restockMinutes.find(min => min > m);
         if (nextM !== undefined) next.setMinutes(nextM);
-        else { next.setHours(next.getHours()+1); next.setMinutes(1); }
-        next.setSeconds(20); next.setMilliseconds(0);
+        else { next.setHours(next.getHours() + 1); next.setMinutes(1); }
+        next.setSeconds(20);
+        next.setMilliseconds(0);
         return next;
     },
 
     async sendStock(channel) {
-        const self = gagStock;
-        const data = await self.fetchStock().catch(() => null);
-        if (!data) return channel.send("⚠️ Failed to fetch GAG stock.");
+        try {
+            const stock = await this.fetchStock();
+            if (!stock?.length) return channel.send("⚠️ Failed to fetch GAG stock.");
 
-        const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
-        const next = self.getNextRestock();
+            const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
+            const next = this.getNextRestock();
 
-        const embed = new EmbedBuilder()
-            .setTitle("🌱 Grow A Garden Stock Update 🌱")
-            .setDescription(
-                `🕒 Current Time: ${now.toLocaleTimeString("en-PH", { hour12: true })}\n` +
-                `🔁 Next Restock: ${next.toLocaleTimeString("en-PH", { hour12: true })}`
-            )
-            .addFields({ name: "Items", value: self.formatItems(data.items).slice(0,1024) })
-            .setColor("Green");
+            const embed = new EmbedBuilder()
+                .setTitle("🌱 Grow A Garden Stock Update 🌱")
+                .setDescription(
+                    `🕒 Current Time: ${now.toLocaleTimeString("en-PH",{hour12:true})}\n` +
+                    `🔁 Next Restock: ${next.toLocaleTimeString("en-PH",{hour12:true})}`
+                )
+                .addFields({ name: "Items", value: this.formatItems(stock).slice(0, 1024) })
+                .setColor("Green");
 
-        const roleIds = [
-            "1427560078411563059",
-            "1427560648673595402",
-            "1427560940068536320"
-        ];
-        const ping = roleIds.map(id => `<@&${id}>`).join(" ");
+            const roleIds = [
+                "1427560078411563059",
+                "1427560648673595402",
+                "1427560940068536320"
+            ];
+            const ping = roleIds.map(id => `<@&${id}>`).join(" ");
 
-        await channel.send({ content: ping, embeds: [embed] });
+            await channel.send({ content: ping, embeds: [embed] });
+        } catch (err) {
+            console.error("Error sending GAG stock:", err);
+        }
     },
 
     scheduleNext(channel, guildId) {
-        const self = gagStock;
-        const next = self.getNextRestock();
+        const next = this.getNextRestock();
         const now = new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Manila"}));
         let delay = next.getTime() - now.getTime();
         if(delay < 0) delay += 5*60*1000;
 
-        if(self.autoStockTimers[guildId]) clearTimeout(self.autoStockTimers[guildId]);
+        if(this.autoStockTimers[guildId]) clearTimeout(this.autoStockTimers[guildId]);
 
-        self.autoStockTimers[guildId] = setTimeout(async () => {
+        this.autoStockTimers[guildId] = setTimeout(async () => {
             const allData = await getData("gagstock/discord") || {};
             const gcData = allData[guildId];
-            if(!gcData?.enabled) return self.stopAutoStock(channel, guildId);
+            if(!gcData?.enabled) return this.stopAutoStock(channel, guildId);
 
-            await self.sendStock(channel);
-            self.scheduleNext(channel, guildId);
+            await this.sendStock(channel);
+            this.scheduleNext(channel, guildId);
         }, delay);
     },
 
     startAutoStock(channel) {
-        const self = gagStock;
         const guildId = channel.guild.id;
-        if(self.autoStockTimers[guildId]) return;
-        self.scheduleNext(channel, guildId);
+        if(this.autoStockTimers[guildId]) return;
+        this.scheduleNext(channel, guildId);
     },
 
     stopAutoStock(channel, guildId=null){
-        const self = gagStock;
         if(!guildId && channel) guildId = channel.guild.id;
-        if(self.autoStockTimers[guildId]){
-            clearTimeout(self.autoStockTimers[guildId]);
-            delete self.autoStockTimers[guildId];
+        if(this.autoStockTimers[guildId]){
+            clearTimeout(this.autoStockTimers[guildId]);
+            delete this.autoStockTimers[guildId];
         }
     },
 
     async execute(interaction){
-        const self = gagStock;
-
         if(!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator))
             return interaction.reply({ content:"🚫 Only Admins can use this command.", ephemeral:true });
 
@@ -149,8 +142,7 @@ const gagStock = {
             gcData.channelId = channel.id;
             allData[guildId] = gcData;
             await setData("gagstock/discord", allData);
-            self.startAutoStock(channel);
-
+            this.startAutoStock(channel);
             return interaction.followUp("✅ **GAG Auto-stock enabled!** I’ll now send updates automatically.");
         }
 
@@ -158,15 +150,14 @@ const gagStock = {
             gcData.enabled = false;
             allData[guildId] = gcData;
             await setData("gagstock/discord", allData);
-            self.stopAutoStock(channel, guildId);
-
+            this.stopAutoStock(channel, guildId);
             return interaction.followUp("🛑 **GAG Auto-stock disabled.** I’ll stop sending updates.");
         }
 
         if(action === "check"){
             const status = gcData.enabled ? "✅ Enabled" : "❌ Disabled";
             const location = gcData.channelId ? `<#${gcData.channelId}>` : "`None`";
-            const next = self.getNextRestock().toLocaleTimeString("en-PH", { hour12:true });
+            const next = this.getNextRestock().toLocaleTimeString("en-PH",{hour12:true});
 
             const embed = new EmbedBuilder()
                 .setTitle("📊 GAG Auto-stock Status")
@@ -182,17 +173,14 @@ const gagStock = {
     },
 
     async onReady(client){
-        const self = gagStock;
         const allData = await getData("gagstock/discord") || {};
         for(const [guildId, gcData] of Object.entries(allData)){
             if(gcData.enabled && gcData.channelId){
                 const guild = client.guilds.cache.get(guildId);
                 if(!guild) continue;
                 const channel = guild.channels.cache.get(gcData.channelId);
-                if(channel) self.startAutoStock(channel);
+                if(channel) this.startAutoStock(channel);
             }
         }
     }
 };
-
-module.exports = gagStock;
