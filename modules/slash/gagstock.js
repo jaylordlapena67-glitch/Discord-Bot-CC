@@ -18,7 +18,6 @@ module.exports = {
         ),
 
     autoStockTimers: {},
-    autoStockTimeouts: {},
 
     ITEM_EMOJI: {
         "Carrot": "🥕", "Strawberry": "🍓", "Blueberry": "🫐", "Orange Tulip": "🌷",
@@ -31,23 +30,15 @@ module.exports = {
         "Honey Sprinkler": "🍯💦", "Level Up Lollipop": "🍭"
     },
 
+    SPECIAL_ITEMS: ["Grand Master", "Great Pumpkin", "Level-Up Lollipop"],
+
     getEmoji(name) {
         return this.ITEM_EMOJI[name] || "❔";
     },
 
-    getNext5Min(date = null) {
-        const now = date || new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
-        let minutes = now.getMinutes();
-        let nextMinutes = Math.floor(minutes / 5) * 5 + 1;
-        if (nextMinutes <= minutes) nextMinutes += 5;
-        const next = new Date(now);
-        next.setMinutes(nextMinutes);
-        next.setSeconds(0, 0);
-        if (nextMinutes >= 60) {
-            next.setHours(now.getHours() + 1);
-            next.setMinutes(nextMinutes % 60);
-        }
-        return next;
+    formatItems(items) {
+        if (!items || items.length === 0) return "❌ Empty";
+        return items.map(i => `• ${this.getEmoji(i.name)} ${i.name} (${i.quantity ?? i.value ?? "N/A"})`).join("\n");
     },
 
     fetchStocks() {
@@ -76,97 +67,138 @@ module.exports = {
         });
     },
 
-    formatItems(items) {
-        if (!items || items.length === 0) return "❌ Empty";
-        return items.map(i => `• ${this.getEmoji(i.name)} ${i.name} (${i.quantity ?? i.value ?? "N/A"})`).join("\n");
+    getNextRestock() {
+        const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
+        const m = now.getMinutes();
+        const next = new Date(now);
+        const restockMinutes = [1,6,11,16,21,26,31,36,41,46,51,56];
+        const nextM = restockMinutes.find(min => min > m);
+        if(nextM!==undefined) next.setMinutes(nextM);
+        else { next.setHours(next.getHours()+1); next.setMinutes(1); }
+        next.setSeconds(0);
+        next.setMilliseconds(0);
+        return next;
     },
 
     async sendStock(channel) {
-        const gcData = await getData(`stock/${channel.id}`);
-        if (!gcData?.enabled) return;
-
         const data = await this.fetchStocks();
-        if (!data) return;
+        if(!data) return channel.send("⚠️ Failed to fetch GAG stock.");
 
         const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
-        const next = this.getNext5Min();
+        const next = this.getNextRestock();
 
         const embed = new EmbedBuilder()
             .setTitle("🌱 Grow A Garden Stock Update")
-            .setDescription(`🕒 Current PH Time: ${now.toLocaleTimeString("en-PH", { hour12: false })}\n🔄 Next Restock: ${next.toLocaleTimeString("en-PH", { hour12: false })}`)
+            .setDescription(`🕒 Current PH Time: ${now.toLocaleTimeString("en-PH",{hour12:true})}\n🕒 Next Restock: ${next.toLocaleTimeString("en-PH",{hour12:true})}`)
             .addFields(
-                { name: "🛠️ Gear", value: this.formatItems(data.gearStock).slice(0, 1024) },
-                { name: "🥚 Eggs", value: this.formatItems(data.eggStock).slice(0, 1024) },
-                { name: "🌱 Seeds", value: this.formatItems(data.seedsStock).slice(0, 1024) }
+                { name: "Items", value: this.formatItems(data.items).slice(0,1024) || "❌ Empty" }
             )
             .setColor("Green");
 
-        await channel.send({ embeds: [embed] });
+        // Ping only if special items exist
+        const specials = data.items.filter(i => this.SPECIAL_ITEMS.includes(i.name) && (i.quantity ?? 0) > 0);
+        let ping = "";
+        if(specials.length > 0){
+            const roleIds = ["1427560078411563059","1427560648673595402","1427560940068536320"]; // Grand Master, Great Pumpkin, Level-Up Lollipop
+            ping = roleIds.map(id => `<@&${id}>`).join(" ");
+        }
+
+        await channel.send({ content: ping || null, embeds: [embed] });
     },
 
-    scheduleNext(channel) {
-        const next = this.getNext5Min();
-        const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
+    scheduleNext(channel, guildId) {
+        const next = this.getNextRestock();
+        const now = new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Manila"}));
         let delay = next.getTime() - now.getTime();
-        if (delay < 0) delay += 5 * 60 * 1000;
+        if(delay < 0) delay += 5*60*1000;
 
-        if (this.autoStockTimers[channel.id]) clearTimeout(this.autoStockTimers[channel.id]);
+        if(this.autoStockTimers[guildId]) clearTimeout(this.autoStockTimers[guildId]);
 
-        this.autoStockTimers[channel.id] = setTimeout(async () => {
+        this.autoStockTimers[guildId] = setTimeout(async () => {
+            const allData = await getData("gagstock/discord") || {};
+            const gcData = allData[guildId];
+            if(!gcData?.enabled) return this.stopAutoStock(channel, guildId);
+
             await this.sendStock(channel);
-            this.scheduleNext(channel);
+            this.scheduleNext(channel, guildId);
         }, delay);
     },
 
     startAutoStock(channel) {
-        if (this.autoStockTimers[channel.id]) return;
-        this.scheduleNext(channel);
+        const guildId = channel.guild.id;
+        if(this.autoStockTimers[guildId]) return;
+        this.scheduleNext(channel, guildId);
     },
 
-    stopAutoStock(channel) {
-        if (this.autoStockTimers[channel.id]) {
-            clearTimeout(this.autoStockTimers[channel.id]);
-            delete this.autoStockTimers[channel.id];
+    stopAutoStock(channel, guildId=null){
+        if(!guildId && channel) guildId = channel.guild.id;
+        if(this.autoStockTimers[guildId]){
+            clearTimeout(this.autoStockTimers[guildId]);
+            delete this.autoStockTimers[guildId];
         }
     },
 
     async execute(interaction) {
         if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return interaction.reply({ content: "🚫 Only admins can use this command.", ephemeral: true });
+            return interaction.reply({ content: "🚫 Only **Admins** can use this command.", ephemeral: true });
         }
 
-        await interaction.deferReply();
         const action = interaction.options.getString("action");
         const channel = interaction.channel;
+        if(!channel) return interaction.reply("❌ Cannot detect channel!");
 
-        let gcData = (await getData(`stock/${channel.id}`)) || { enabled: false };
+        const guildId = interaction.guild.id;
+        const allData = await getData("gagstock/discord") || {};
+        const gcData = allData[guildId] || { enabled: false, channelId: null };
 
         if (action === "on") {
-            if (gcData.enabled) return interaction.followUp("⚠️ Auto-stock already enabled.");
+            if (gcData.enabled) return interaction.reply("✅ GAG Auto-stock is already **enabled**.");
+
             gcData.enabled = true;
-            await setData(`stock/${channel.id}`, gcData);
+            gcData.channelId = channel.id;
+            allData[guildId] = gcData;
+            await setData("gagstock/discord", allData);
+
             this.startAutoStock(channel);
-            return interaction.followUp("✅ Auto-stock enabled. Updates every 5 minutes.");
+            return interaction.reply("✅ GAG Auto-stock **enabled**! Updates every restock time.");
         }
 
-        if (action === "off") {
+        else if (action === "off") {
+            if (!gcData.enabled) return interaction.reply("⚠️ GAG Auto-stock is already **disabled**.");
+
             gcData.enabled = false;
-            await setData(`stock/${channel.id}`, gcData);
-            this.stopAutoStock(channel);
-            return interaction.followUp("❌ Auto-stock disabled.");
+            allData[guildId] = gcData;
+            await setData("gagstock/discord", allData);
+
+            this.stopAutoStock(channel, guildId);
+            return interaction.reply("🛑 GAG Auto-stock **disabled**.");
         }
 
-        if (action === "check") {
-            const status = gcData.enabled ? "ON ✅" : "OFF ❌";
-            return interaction.followUp(`📊 Auto-stock status: ${status}`);
+        else if (action === "check") {
+            const status = gcData.enabled ? "✅ **Enabled**" : "❌ **Disabled**";
+            const location = gcData.channelId ? `<#${gcData.channelId}>` : "`None`";
+            const next = this.getNextRestock().toLocaleTimeString("en-PH", { hour12: true });
+
+            const embed = new EmbedBuilder()
+                .setTitle("📊 GAG Auto-stock Status")
+                .addFields(
+                    { name: "Status", value: status, inline: true },
+                    { name: "Channel", value: location, inline: true },
+                    { name: "Next Restock (PH)", value: next, inline: true }
+                )
+                .setColor(gcData.enabled ? "Green" : "Red");
+
+            return interaction.reply({ embeds: [embed] });
         }
     },
 
     async onReady(client) {
-        const allGCs = await getData("stock") || {};
-        for (const channelId in allGCs) {
-            if (allGCs[channelId].enabled) {
-                const channel = await client.channels.fetch(channelId).catch(() => null);
+        const allData = await getData("gagstock/discord") || {};
+        for (const [guildId, gcData] of Object.entries(allData)) {
+            if (gcData.enabled && gcData.channelId) {
+                const guild = client.guilds.cache.get(guildId);
+                if (!guild) continue;
+                const channel = guild.channels.cache.get(gcData.channelId);
                 if (channel) this.startAutoStock(channel);
             }
         }
