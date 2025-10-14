@@ -107,11 +107,19 @@ module.exports = {
             )
             .setColor("Green");
 
-        // --- Fixed PVBR ping roles ---
-        const pvbrRoleIds = ['1427517229129404477','1427517104780869713']; // SECRET + GODLY roles
-        const ping = pvbrRoleIds.map(id => `<@&${id}>`).join(' ');
+        // --- Ping only if godly or secret items exist ---
+        const specialItems = stock.filter(i => {
+            const rarity = this.getRarity(i.name);
+            return rarity === "godly" || rarity === "secret";
+        });
 
-        await channel.send({ content: ping, embeds: [embed] });
+        let ping = "";
+        if (specialItems.length > 0) {
+            const pvbrRoleIds = ['1427517229129404477','1427517104780869713'];
+            ping = pvbrRoleIds.map(id => `<@&${id}>`).join(' ');
+        }
+
+        await channel.send({ content: ping || null, embeds: [embed] });
     },
 
     scheduleNext(channel, guildId) {
@@ -160,9 +168,7 @@ module.exports = {
         const gcData = allData[guildId] || { enabled: false, channelId: null };
 
         if (action === "on") {
-            if (gcData.enabled) {
-                return interaction.reply("✅ PVBR Auto-stock is already **enabled** in this server.");
-            }
+            if (gcData.enabled) return interaction.reply("✅ PVBR Auto-stock is already **enabled** in this server.");
 
             gcData.enabled = true;
             gcData.channelId = channel.id;
@@ -170,20 +176,18 @@ module.exports = {
             await setData("pvbstock/discord", allData);
 
             this.startAutoStock(channel);
-            await interaction.reply("✅ PVBR Auto-stock **enabled**! I’ll now send updates every restock time.");
+            return interaction.reply("✅ PVBR Auto-stock **enabled**! Updates will be sent every restock time.");
         }
 
         else if (action === "off") {
-            if (!gcData.enabled) {
-                return interaction.reply("⚠️ PVBR Auto-stock is already **disabled**.");
-            }
+            if (!gcData.enabled) return interaction.reply("⚠️ PVBR Auto-stock is already **disabled**.");
 
             gcData.enabled = false;
             allData[guildId] = gcData;
             await setData("pvbstock/discord", allData);
 
             this.stopAutoStock(channel, guildId);
-            await interaction.reply("🛑 PVBR Auto-stock **disabled**. I will stop sending updates.");
+            return interaction.reply("🛑 PVBR Auto-stock **disabled**.");
         }
 
         else if (action === "check") {
@@ -200,11 +204,10 @@ module.exports = {
                 )
                 .setColor(gcData.enabled ? "Green" : "Red");
 
-            await interaction.reply({ embeds: [embed] });
+            return interaction.reply({ embeds: [embed] });
         }
     },
 
-    // 🔁 Auto resume on restart
     async onReady(client) {
         const allData = await getData("pvbstock/discord") || {};
         for (const [guildId, gcData] of Object.entries(allData)) {
@@ -212,10 +215,7 @@ module.exports = {
                 const guild = client.guilds.cache.get(guildId);
                 if (!guild) continue;
                 const channel = guild.channels.cache.get(gcData.channelId);
-                if (channel) {
-                    this.startAutoStock(channel);
-                    console.log(`[AutoResume] PVBR stock resumed for guild ${guild.name}`);
-                }
+                if (channel) this.startAutoStock(channel);
             }
         }
     }
