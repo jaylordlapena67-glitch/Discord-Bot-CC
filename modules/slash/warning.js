@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, PermissionsBitField } = require("discord.js");
+const { SlashCommandBuilder } = require("discord.js");
 const { setData, getData } = require("../../database.js");
 
 const LOG_CHANNEL_ID = "1426904103534985317"; // Warning & mute logs channel
@@ -151,21 +151,37 @@ module.exports = {
     }
   },
 
-  // Background auto-detection
+  // -----------------------------
+  // Background auto-detection with regex boundaries
+  // -----------------------------
   handleEvent: async function({ message }) {
     if (!message || !message.guild) return;
     if (message.author.id === message.client.user.id) return;
 
-    const guildId = message.guild.id;  
-    const userId = message.author.id;  
-    const words = message.content.toLowerCase().replace(/[^\w\s]/g, "").split(/\s+/).filter(Boolean);  
-    const violations = [];  
+    const content = message.content.toLowerCase();
+    const violations = [];
 
-    if (BADWORDS.some(w => words.includes(w))) violations.push({ type: "Bad Language", note: pickRandom(MESSAGES.badword) });  
-    if (RACIST_WORDS.some(w => words.includes(w))) violations.push({ type: "Racist/Discriminatory Term", note: pickRandom(MESSAGES.racist) });  
+    // BAD WORDS
+    for (const word of BADWORDS) {
+      const regex = new RegExp(`\\b${word.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, "i");
+      if (regex.test(content)) {
+        violations.push({ type: "Bad Language", note: pickRandom(MESSAGES.badword) });
+        break;
+      }
+    }
 
-    for (const v of violations) {  
-      await addWarning(guildId, userId, v.type, v.note, message.channel);  
+    // RACIST WORDS
+    for (const word of RACIST_WORDS) {
+      const regex = new RegExp(`\\b${word.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, "i");
+      if (regex.test(content)) {
+        violations.push({ type: "Racist/Discriminatory Term", note: pickRandom(MESSAGES.racist) });
+        break;
+      }
+    }
+
+    // Apply warnings
+    for (const v of violations) {
+      await addWarning(message.guild.id, message.author.id, v.type, v.note, message.channel);
     }
   }
 };
