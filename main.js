@@ -77,30 +77,30 @@ client.once('ready', async () => {
         console.error(boldText(gradientText(`❌ Failed to register global commands: ${error.message}`, 'red')));
     }
 
-    // --- Send role selection buttons only once per guild ---
+    // --- Send role selection message (once per guild) ---
     try {
-        const stockChannelId = '1426904690343284847'; // Channel where role buttons appear
+        const stockChannelId = '1426904690343284847'; // Channel for role picker
         const allGuildData = await getData('pvb_roles') || {};
+
         for (const guild of client.guilds.cache.values()) {
             const existingData = allGuildData[guild.id];
-            if (!existingData || !existingData.messageId) {
-                const channel = guild.channels.cache.get(stockChannelId);
-                if (!channel || !channel.isTextBased()) continue;
+            const channel = guild.channels.cache.get(stockChannelId);
+            if (!channel || !channel.isTextBased()) continue;
 
-                const row = new ActionRowBuilder()
-                    .addComponents(
-                        new ButtonBuilder()
-                            .setCustomId('secret_role')
-                            .setLabel('SECRET')
-                            .setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder()
-                            .setCustomId('godly_role')
-                            .setLabel('GODLY')
-                            .setStyle(ButtonStyle.Success)
-                    );
+            if (!existingData || !existingData.messageId) {
+                const row = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('secret_role')
+                        .setLabel('SECRET')
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId('godly_role')
+                        .setLabel('GODLY')
+                        .setStyle(ButtonStyle.Success)
+                );
 
                 const msg = await channel.send({
-                    content: `📢 **Choose your stock alert roles:**\nYou can select one or both roles by clicking below.`,
+                    content: `📢 **Choose your stock alert roles:**\nSelect one or both roles below.`,
                     components: [row]
                 });
 
@@ -145,21 +145,28 @@ client.on('interactionCreate', async interaction => {
     if (interaction.isButton()) {
         const member = interaction.member;
         const rolesToAdd = [];
-        if (interaction.customId === 'secret_role') rolesToAdd.push('1427517229129404477'); // Secret
-        if (interaction.customId === 'godly_role') rolesToAdd.push('1427517104780869713'); // Godly
+
+        // Replace these with actual role IDs from your server
+        if (interaction.customId === 'secret_role') rolesToAdd.push('1427517229129404477'); // Secret role ID
+        if (interaction.customId === 'godly_role') rolesToAdd.push('1427517104780869713'); // Godly role ID
 
         try {
             for (const roleId of rolesToAdd) {
-                if (!member.roles.cache.has(roleId)) await member.roles.add(roleId);
+                if (member.roles.cache.has(roleId)) {
+                    await member.roles.remove(roleId);
+                } else {
+                    await member.roles.add(roleId);
+                }
             }
-            await interaction.reply({ content: `✅ You have been given your selected role(s)!`, ephemeral: true });
+            await interaction.reply({ content: `✅ Role(s) updated successfully!`, ephemeral: true });
         } catch (err) {
-            console.error('❌ Error assigning roles:', err);
-            await interaction.reply({ content: '❌ Failed to assign roles.', ephemeral: true });
+            console.error('❌ Error assigning/removing roles:', err);
+            await interaction.reply({ content: '❌ Failed to update roles.', ephemeral: true });
         }
         return;
     }
 
+    // Slash command handler
     if (!interaction.isCommand()) return;
     const command = client.slashCommands.get(interaction.commandName);
     if (command) {
