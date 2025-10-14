@@ -4,10 +4,11 @@ const gradient = require('gradient-string');
 const chalk = require('chalk');
 const fs = require('fs');
 const path = require('path');
-const config = require('./config.js'); // Make sure TOKEN is here
+const config = require('./config.js'); // Token at prefix
 const { loadCommands, loadSlashCommands } = require('./utils/commandLoader');
 const loadEvents = require('./utils/eventLoader');
 const { logDiscordMessage, logCommandExecution } = require('./utils/logger');
+const { getData, setData } = require('./database.js'); // Database module
 
 // --- Discord client setup ---
 const client = new Client({
@@ -23,26 +24,6 @@ client.commands = new Collection();
 client.slashCommands = new Collection();
 client.events = new Collection();
 const cooldowns = new Map();
-
-// --- Database setup ---
-const dbPath = path.join(__dirname, 'database/json');
-if (!fs.existsSync(dbPath)) fs.mkdirSync(dbPath, { recursive: true });
-
-const loadDatabase = (fileName) => {
-    const filePath = path.join(dbPath, `${fileName}.json`);
-    if (!fs.existsSync(filePath)) fs.writeFileSync(filePath, JSON.stringify([], null, 2));
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-};
-
-const saveDatabase = (fileName, data) => {
-    const filePath = path.join(dbPath, `${fileName}.json`);
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-};
-
-const stickers = loadDatabase('stickers');
-const users = loadDatabase('users');
-const servers = loadDatabase('servers');
-const emoji = loadDatabase('emoji');
 
 // --- Gradient utils ---
 const gradients = {
@@ -74,21 +55,17 @@ client.once('ready', async () => {
     console.log(boldText(gradientText(`Logged in as ${client.user.tag}`, 'lime')));
     console.log(boldText(gradientText("━━━━━━━━━━[ LOADING COMMANDS & EVENTS ]━━━━━━━━━━━━", 'cyan')));
 
-    // Load all local commands, slash commands, and events
+    // Load commands, slash commands, events
     loadCommands(client);
     await loadSlashCommands(client);
     loadEvents(client);
 
     console.log(boldText(gradientText("[ DEPLOY COMPLETE ]", 'lime')));
-    console.log(gradient.cristal(`╔════════════════════`));          
-    console.log(gradient.cristal(`║ BotName: ${client.user.tag}`));  
-    console.log(gradient.cristal(`║ Prefix: ${config.prefix}`));  
-    console.log(gradient.cristal(`╚════════════════════`));          
 
     // --- Register global slash commands ---
     try {
         console.log(gradientText("\n🧹 Clearing old global slash commands...", 'cyan'));
-        await client.application.commands.set([]); // Clear old global commands
+        await client.application.commands.set([]);
 
         const commands = client.slashCommands.map(command => {
             if (command.data) {
@@ -108,29 +85,43 @@ client.once('ready', async () => {
         console.error(boldText(gradientText(`❌ Failed to register global commands: ${error.message}`, 'red')));
     }
 
-    // --- Auto Ping PVBR Stock Role Channel ---
+    // --- Send role selection buttons ONLY ONCE per guild ---
     try {
-        const stockChannel = await client.channels.fetch('1426904690343284847'); // your channel ID
-        if (stockChannel && stockChannel.isTextBased()) {
-            const row = new ActionRowBuilder()
-                .addComponents(
-                    new ButtonBuilder()
-                        .setCustomId('secret_role')
-                        .setLabel('SECRET')
-                        .setStyle(ButtonStyle.Primary),
-                    new ButtonBuilder()
-                        .setCustomId('godly_role')
-                        .setLabel('GODLY')
-                        .setStyle(ButtonStyle.Success)
-                );
+        const allGuildData = await getData('pvb_roles') || {};
+        for (const guildId of client.guilds.cache.keys()) {
+            const guild = await client.guilds.fetch(guildId);
+            const existingData = allGuildData[guildId];
 
-            await stockChannel.send({
-                content: `📢 **Choose your stock alert role:**\nClick the button for the role you want to get notifications for!`,
-                components: [row]
-            });
+            if (!existingData || !existingData.messageId) {
+                // Channel to send the buttons
+                const channel = guild.channels.cache.find(ch => ch.isTextBased() && ch.permissionsFor(guild.members.me).has('SendMessages'));
+                if (!channel) continue;
+
+                const row = new ActionRowBuilder()
+                    .addComponents(
+                        new ButtonBuilder()
+                            .setCustomId('secret_role')
+                            .setLabel('SECRET')
+                            .setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder()
+                            .setCustomId('godly_role')
+                            .setLabel('GODLY')
+                            .setStyle(ButtonStyle.Success)
+                    );
+
+                const msg = await channel.send({
+                    content: `📢 **Choose your stock alert roles:**\nYou can select one or both roles by clicking below.`,
+                    components: [row]
+                });
+
+                allGuildData[guildId] = { messageId: msg.id, channelId: channel.id };
+            }
         }
+
+        await setData('pvb_roles', allGuildData);
+        console.log('✅ Role selection messages initialized.');
     } catch (err) {
-        console.error('❌ Failed to send auto-ping message to stock channel:', err);
+        console.error('❌ Failed to send role selection messages:', err);
     }
 
     // --- Resume PVBR Auto-stock after restart ---
@@ -159,8 +150,40 @@ client.once('ready', async () => {
     console.log(boldText(gradientText("━━━━━━━━━━[ READY FOR USE ✅ ]━━━━━━━━━━━━", 'lime')));
 });
 
+// --- Button and slash interaction handler ---
+client.on('interactionCreate', async interaction => {
+    if (interaction.isButton()) {
+        const member = interaction.member;
+        const allRoles = [];
+        if (interaction.customId === 'secret_role') allRoles.push('SECRET_ROLE_ID'); // real role ID
+        if (interaction.customId === 'godly_role') allRoles.push('GODLY_ROLE_ID'); // real role ID
+
+        try {
+            for (const roleId of allRoles) {
+                if (!member.roles.cache.has(roleId)) await member.roles.add(roleId);
+            }
+            await interaction.reply({ content: `✅ You have been given your selected role(s)!`, ephemeral: true });
+        } catch (err) {
+            console.error('❌ Error assigning roles:', err);
+            await interaction.reply({ content: '❌ Failed to assign roles.', ephemeral: true });
+        }
+        return;
+    }
+
+    if (!interaction.isCommand()) return;
+    const command = client.slashCommands.get(interaction.commandName);
+    if (command) {
+        try {
+            await command.execute(interaction);
+        } catch (error) {
+            console.error(`❌ Error executing slash command [${interaction.commandName}]:`, error);
+            await interaction.reply({ content: `❌ | ${error.message}`, ephemeral: true });
+        }
+    }
+});
+
 // --- Message handling (prefix commands) ---
-client.on('messageCreate', async (message) => {
+client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
 
     logDiscordMessage(message);
@@ -178,67 +201,38 @@ client.on('messageCreate', async (message) => {
     const command = client.commands.get(commandName) || client.commands.find(cmd => cmd.config?.aliases?.includes(commandName));
 
     if (command) {
-        if ((command.config?.usePrefix === false) || (command.config?.usePrefix && hasPrefix) || isMention) {
-            const cooldownKey = `${message.author.id}-${command.config?.name}`;
-            const cooldownTime = command.config?.cooldown || 0;
+        const cooldownKey = `${message.author.id}-${command.config?.name}`;
+        const cooldownTime = command.config?.cooldown || 0;
 
-            if (cooldowns.has(cooldownKey)) {
-                const expirationTime = cooldowns.get(cooldownKey) + cooldownTime * 1000;
-                const now = Date.now();
-                if (now < expirationTime) {
-                    const remainingTime = ((expirationTime - now) / 1000).toFixed(1);
-                    const cooldownEmbed = {
-                        color: Colors.Blurple,
-                        title: "⏳ Command Cooldown",
-                        description: `Hey **${message.author.username}**, the command **"${command.config.name}"** is on cooldown!\n\nPlease try again in **${remainingTime} seconds**.`,
-                        timestamp: new Date(),
-                        footer: { text: "Cooldown System", icon_url: client.user.displayAvatarURL() }
-                    };
-                    const cooldownMsg = await message.reply({ embeds: [cooldownEmbed] });
-                    setTimeout(() => cooldownMsg.delete().catch(() => {}), 30000);
-                    return;
-                }
+        if (cooldowns.has(cooldownKey)) {
+            const expirationTime = cooldowns.get(cooldownKey) + cooldownTime * 1000;
+            const now = Date.now();
+            if (now < expirationTime) {
+                const remainingTime = ((expirationTime - now) / 1000).toFixed(1);
+                const cooldownEmbed = {
+                    color: Colors.Blurple,
+                    title: "⏳ Command Cooldown",
+                    description: `Hey **${message.author.username}**, the command **"${command.config.name}"** is on cooldown!\n\nPlease try again in **${remainingTime} seconds**.`,
+                    timestamp: new Date(),
+                    footer: { text: "Cooldown System", icon_url: client.user.displayAvatarURL() }
+                };
+                const cooldownMsg = await message.reply({ embeds: [cooldownEmbed] });
+                setTimeout(() => cooldownMsg.delete().catch(() => {}), 30000);
+                return;
             }
-
-            cooldowns.set(cooldownKey, Date.now());
-            logCommandExecution(message, command, args);
-
-            try {
-                await command.letStart({ args, message, discord: { client } });
-            } catch (error) {
-                console.error(`❌ Error executing command: ${error.message}`);
-                message.reply(`❌ | ${error.message}`);
-            }
-
-            if (cooldownTime > 0) setTimeout(() => cooldowns.delete(cooldownKey), cooldownTime * 1000);
         }
-    }
-});
 
-// --- Slash commands handling ---
-client.on('interactionCreate', async (interaction) => {
-    if (interaction.isButton()) {
-        const member = interaction.member;
-        if (interaction.customId === 'secret_role') {
-            await member.roles.add('SECRET_ROLE_ID'); // Palitan ng real role ID
-            await interaction.reply({ content: '✅ You have been given the SECRET role!', ephemeral: true });
-        }
-        if (interaction.customId === 'godly_role') {
-            await member.roles.add('GODLY_ROLE_ID'); // Palitan ng real role ID
-            await interaction.reply({ content: '✅ You have been given the GODLY role!', ephemeral: true });
-        }
-        return;
-    }
+        cooldowns.set(cooldownKey, Date.now());
+        logCommandExecution(message, command, args);
 
-    if (!interaction.isCommand()) return;
-    const command = client.slashCommands.get(interaction.commandName);
-    if (command) {
         try {
-            await command.execute(interaction);
+            await command.letStart({ args, message, discord: { client } });
         } catch (error) {
-            console.error(`❌ Error executing slash command [${interaction.commandName}]:`, error);
-            interaction.reply({ content: `❌ | ${error.message}`, ephemeral: true });
+            console.error(`❌ Error executing command: ${error.message}`);
+            message.reply(`❌ | ${error.message}`);
         }
+
+        if (cooldownTime > 0) setTimeout(() => cooldowns.delete(cooldownKey), cooldownTime * 1000);
     }
 });
 
