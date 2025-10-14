@@ -7,13 +7,13 @@ module.exports = {
         .setName("pvbstock")
         .setDescription("PVBR auto-stock every 1,6,11... +20s delay with rare seed alerts")
         .addStringOption(option =>
-            option.setName("option")
-                .setDescription("Choose: on, off, check")
+            option.setName("action")
+                .setDescription("Choose on, off, or check")
                 .setRequired(true)
                 .addChoices(
-                    { name: "on", value: "on" },
-                    { name: "off", value: "off" },
-                    { name: "check", value: "check" }
+                    { name: "On", value: "on" },
+                    { name: "Off", value: "off" },
+                    { name: "Check", value: "check" }
                 )
         ),
 
@@ -153,41 +153,28 @@ module.exports = {
         }
     },
 
-    async execute(interaction){
-        const option = interaction.options.getString("option");
+    async execute(interaction) {
+        const action = interaction.options.getString("action");
         const channel = interaction.channel;
-        const channelId = channel.id;
-        let gcData = (await getData(`pvbstock/${channelId}`)) || { enabled: false };
+        let gcData = (await getData(`pvbstock/${channel.id}`)) || { enabled: false };
 
-        if(option==="on"){
+        if(action==="on"){
             if(gcData.enabled) return interaction.reply("⚠️ Auto-stock already active!");
             gcData.enabled = true;
-            await setData(`pvbstock/${channelId}`, gcData);
+            await setData(`pvbstock/${channel.id}`, gcData);
             this.startAutoStock(channel);
             return interaction.reply("✅ PVBR Auto-stock enabled. Runs every 1,6,11,... +20s delay.");
         }
 
-        if(option==="off"){
+        if(action==="off"){
             gcData.enabled = false;
-            await setData(`pvbstock/${channelId}`, gcData);
+            await setData(`pvbstock/${channel.id}`, gcData);
             this.stopAutoStock(channel);
             return interaction.reply("❌ PVBR Auto-stock disabled.");
         }
 
-        if(option==="check"){
+        if(action==="check"){
             return interaction.reply(`📊 PVBR Auto-stock: ${gcData.enabled ? "ON ✅" : "OFF ❌"}`);
-        }
-
-        return interaction.reply("⚙️ Usage: /pvbstock on|off|check");
-    },
-
-    async onLoad(client){
-        const allGCs = (await getData("pvbstock")) || {};
-        for(const tid in allGCs){
-            if(allGCs[tid].enabled){
-                const channel = await client.channels.fetch(tid).catch(()=>null);
-                if(channel) this.startAutoStock(channel);
-            }
         }
     }
 };
