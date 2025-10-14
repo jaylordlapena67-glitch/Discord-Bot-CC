@@ -37,10 +37,18 @@ module.exports = {
 
     async fetchStock() {
         try {
-            const { data } = await axios.get("https://growagarden.gg/api/stock");
+            const { data } = await axios.get("https://growagarden.gg/api/stock", {
+                headers: {
+                    "accept": "*/*",
+                    "content-type": "application/json",
+                    "referer": "https://growagarden.gg/stocks",
+                    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+                },
+                timeout: 5000
+            });
             return data.items || [];
         } catch (err) {
-            console.error("Failed to fetch GAG stock:", err);
+            console.error("Failed to fetch GAG stock:", err.response?.status, err.response?.data || err.message);
             return [];
         }
     },
@@ -52,11 +60,10 @@ module.exports = {
 
     getNextRestock() {
         const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
-        const m = now.getMinutes();
-        const next = new Date(now);
         const restockMinutes = [1,6,11,16,21,26,31,36,41,46,51,56];
-        const nextM = restockMinutes.find(min => min > m);
-        if (nextM !== undefined) next.setMinutes(nextM);
+        const next = new Date(now);
+        const nextM = restockMinutes.find(min => min > now.getMinutes());
+        if(nextM !== undefined) next.setMinutes(nextM);
         else { next.setHours(next.getHours() + 1); next.setMinutes(1); }
         next.setSeconds(20);
         next.setMilliseconds(0);
@@ -64,33 +71,29 @@ module.exports = {
     },
 
     async sendStock(channel) {
-        try {
-            const stock = await this.fetchStock();
-            if (!stock?.length) return channel.send("⚠️ Failed to fetch GAG stock.");
+        const stock = await this.fetchStock();
+        if (!stock?.length) return channel.send("⚠️ Failed to fetch GAG stock.");
 
-            const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
-            const next = this.getNextRestock();
+        const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
+        const next = this.getNextRestock();
 
-            const embed = new EmbedBuilder()
-                .setTitle("🌱 Grow A Garden Stock Update 🌱")
-                .setDescription(
-                    `🕒 Current Time: ${now.toLocaleTimeString("en-PH",{hour12:true})}\n` +
-                    `🔁 Next Restock: ${next.toLocaleTimeString("en-PH",{hour12:true})}`
-                )
-                .addFields({ name: "Items", value: this.formatItems(stock).slice(0, 1024) })
-                .setColor("Green");
+        const embed = new EmbedBuilder()
+            .setTitle("🌱 Grow A Garden Stock Update 🌱")
+            .setDescription(
+                `🕒 Current Time: ${now.toLocaleTimeString("en-PH",{hour12:true})}\n` +
+                `🔁 Next Restock: ${next.toLocaleTimeString("en-PH",{hour12:true})}`
+            )
+            .addFields({ name: "Items", value: this.formatItems(stock).slice(0, 1024) })
+            .setColor("Green");
 
-            const roleIds = [
-                "1427560078411563059",
-                "1427560648673595402",
-                "1427560940068536320"
-            ];
-            const ping = roleIds.map(id => `<@&${id}>`).join(" ");
+        const roleIds = [
+            "1427560078411563059",
+            "1427560648673595402",
+            "1427560940068536320"
+        ];
+        const ping = roleIds.map(id => `<@&${id}>`).join(" ");
 
-            await channel.send({ content: ping, embeds: [embed] });
-        } catch (err) {
-            console.error("Error sending GAG stock:", err);
-        }
+        await channel.send({ content: ping, embeds: [embed] });
     },
 
     scheduleNext(channel, guildId) {
