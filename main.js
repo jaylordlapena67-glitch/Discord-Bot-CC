@@ -1,21 +1,26 @@
+// main.js
+
 const { Client, GatewayIntentBits, Collection, Colors } = require('discord.js');
 const gradient = require('gradient-string');
 const chalk = require('chalk');
 const fs = require('fs');
 const path = require('path');
-const config = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.js'), 'utf8'));
+const config = require('./config.js'); // Direct require ng config.js
 const { loadCommands, loadSlashCommands } = require('./utils/commandLoader');
 const loadEvents = require('./utils/eventLoader');
 const { logDiscordMessage, logCommandExecution } = require('./utils/logger');
 
+// --- Discord client setup ---
 const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
 });
+
 client.commands = new Collection();
 client.slashCommands = new Collection();
-client.events = new Collection(); // Ensure this is initialized correctly
+client.events = new Collection();
 const cooldowns = new Map();
 
+// --- Database setup ---
 const dbPath = path.join(__dirname, 'database/json');
 if (!fs.existsSync(dbPath)) fs.mkdirSync(dbPath, { recursive: true });
 
@@ -35,17 +40,15 @@ const users = loadDatabase('users');
 const servers = loadDatabase('servers');
 const emoji = loadDatabase('emoji');
 
+// --- Gradient utils ---
 const gradients = {
     lime: gradient('#32CD32', '#ADFF2F'),
     cyan: gradient('#00FFFF', '#00BFFF')
 };
-
 const gradientText = (text, color) => (gradients[color] ? gradients[color](text) : text);
 const boldText = (text) => chalk.bold(text);
 
-console.log(boldText(gradientText("Checking database......", 'cyan')));
-console.log(boldText(gradientText("Utilized Database Loaded", 'lime')));
-
+// --- Global reload helper ---
 global.cc = {
     reloadCommand: function (commandName) {
         try {
@@ -61,14 +64,15 @@ global.cc = {
     }
 };
 
+// --- Discord ready event ---
 client.once('ready', async () => {
     console.log(boldText(gradientText("━━━━━━━━━━[ BOT DEPLOYMENT ]━━━━━━━━━━━━", 'lime')));
     console.log(boldText(gradientText(`Logged in as ${client.user.tag}`, 'lime')));
     console.log(boldText(gradientText("━━━━━━━━━━[ LOADING... ]━━━━━━━━━━━━", 'cyan')));
 
     loadCommands(client);
-    await loadSlashCommands(client); // Load the slash commands
-    loadEvents(client); // Load the events
+    await loadSlashCommands(client);
+    loadEvents(client);
 
     console.log(boldText(gradientText("[ DEPLOYED ALL SYSTEMS ]", 'lime')));
     console.log(gradient.cristal(`╔════════════════════`));          
@@ -103,6 +107,7 @@ client.once('ready', async () => {
     }
 });
 
+// --- Message handling ---
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
 
@@ -141,10 +146,7 @@ client.on('messageCreate', async (message) => {
                     };
 
                     const cooldownMsg = await message.reply({ embeds: [cooldownEmbed] });
-                    setTimeout(() => {
-                        cooldownMsg.delete().catch(() => {});
-                    }, 30000);
-
+                    setTimeout(() => cooldownMsg.delete().catch(() => {}), 30000);
                     return;
                 }
             }
@@ -159,15 +161,13 @@ client.on('messageCreate', async (message) => {
                 message.reply(`❌ | ${error.message}`);
             }
 
-            if (cooldownTime > 0) {
-                setTimeout(() => cooldowns.delete(cooldownKey), cooldownTime * 1000);
-            }
+            if (cooldownTime > 0) setTimeout(() => cooldowns.delete(cooldownKey), cooldownTime * 1000);
         }
     }
 });
 
+// --- Slash commands ---
 client.on('interactionCreate', async (interaction) => {
-    console.log(`Interaction received: ${interaction.commandName}`);
     if (!interaction.isCommand()) return;
 
     const command = client.slashCommands.get(interaction.commandName);
@@ -180,10 +180,20 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 });
+
+// --- Error handling ---
 process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled Promise Rejection:', reason);
 });
+
+// --- Login Discord ---
 client.login(config.token);
 
-/*if (config.autorestart) {
-    setInterval(() => process.exit(1), config.autorestart * 3600000);*/
+// --- Optional: Express health check for Render ---
+const express = require('express');
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get('/', (req, res) => res.send('Bot is running!'));
+
+app.listen(PORT, () => console.log(`Web server listening on port ${PORT}`));
