@@ -4,7 +4,7 @@ const path = require('path');
 const config = require('./config.js'); // Your token & client ID
 
 const token = config.token;
-const clientId = config.client_id;
+const clientId = config.clientId;
 const guildId = '1426904103534985317'; // <-- Replace with your test server ID
 
 const commands = [];
