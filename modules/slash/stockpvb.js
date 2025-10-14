@@ -2,21 +2,7 @@ const { SlashCommandBuilder, EmbedBuilder, PermissionsBitField } = require("disc
 const axios = require("axios");
 const { setData, getData } = require("../../../database.js");
 
-module.exports = {
-    data: new SlashCommandBuilder()
-        .setName("pvbstock")
-        .setDescription("Plants vs Brainrots auto-stock every restock time (Admin only)")
-        .addStringOption(option =>
-            option.setName("action")
-                .setDescription("Choose on, off, or check")
-                .setRequired(true)
-                .addChoices(
-                    { name: "On", value: "on" },
-                    { name: "Off", value: "off" },
-                    { name: "Check", value: "check" }
-                )
-        ),
-
+const pvbrStock = {
     autoStockTimers: {},
 
     ITEM_EMOJI: {
@@ -82,10 +68,9 @@ module.exports = {
         const next = new Date(now);
         const restockMinutes = [1,6,11,16,21,26,31,36,41,46,51,56];
         const nextM = restockMinutes.find(min => min > m);
-        if(nextM!==undefined) next.setMinutes(nextM);
+        if(nextM !== undefined) next.setMinutes(nextM);
         else { next.setHours(next.getHours()+1); next.setMinutes(1); }
-        next.setSeconds(20);
-        next.setMilliseconds(0);
+        next.setSeconds(20); next.setMilliseconds(0);
         return next;
     },
 
@@ -108,45 +93,50 @@ module.exports = {
             )
             .setColor("Green");
 
-        const pvbrRoleIds = ['1427517229129404477','1427517104780869713'];
+        const pvbrRoleIds = ['1427517229129404477','1427517104780869713']; // SECRET + GODLY roles
         const ping = pvbrRoleIds.map(id => `<@&${id}>`).join(' ');
 
         await channel.send({ content: ping, embeds: [embed] });
     },
 
     scheduleNext(channel, guildId) {
-        const next = this.getNextRestock();
+        const self = pvbrStock;
+        const next = self.getNextRestock();
         const now = new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Manila"}));
         let delay = next.getTime() - now.getTime();
         if(delay < 0) delay += 5*60*1000;
 
-        if(this.autoStockTimers[guildId]) clearTimeout(this.autoStockTimers[guildId]);
+        if(self.autoStockTimers[guildId]) clearTimeout(self.autoStockTimers[guildId]);
 
-        this.autoStockTimers[guildId] = setTimeout(async () => {
+        self.autoStockTimers[guildId] = setTimeout(async () => {
             const allData = await getData("pvbstock/discord") || {};
             const gcData = allData[guildId];
-            if(!gcData?.enabled) return this.stopAutoStock(channel, guildId);
+            if(!gcData?.enabled) return self.stopAutoStock(channel, guildId);
 
-            this.sendStock(channel); // <-- async, non-blocking
-            this.scheduleNext(channel, guildId);
+            await self.sendStock(channel);
+            self.scheduleNext(channel, guildId);
         }, delay);
     },
 
     startAutoStock(channel) {
+        const self = pvbrStock;
         const guildId = channel.guild.id;
-        if(this.autoStockTimers[guildId]) return;
-        this.scheduleNext(channel, guildId);
+        if(self.autoStockTimers[guildId]) return;
+        self.scheduleNext(channel, guildId);
     },
 
     stopAutoStock(channel, guildId=null){
+        const self = pvbrStock;
         if(!guildId && channel) guildId = channel.guild.id;
-        if(this.autoStockTimers[guildId]){
-            clearTimeout(this.autoStockTimers[guildId]);
-            delete this.autoStockTimers[guildId];
+        if(self.autoStockTimers[guildId]){
+            clearTimeout(self.autoStockTimers[guildId]);
+            delete self.autoStockTimers[guildId];
         }
     },
 
     async execute(interaction) {
+        const self = pvbrStock;
+
         if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
             return interaction.reply({ content: "🚫 Only **Admins** can use this command.", ephemeral: true });
         }
@@ -159,39 +149,31 @@ module.exports = {
         const allData = await getData("pvbstock/discord") || {};
         const gcData = allData[guildId] || { enabled: false, channelId: null };
 
-        await interaction.deferReply({ ephemeral: true }); // defer first
-
         if (action === "on") {
-            if (gcData.enabled) {
-                return interaction.followUp("✅ PVBR Auto-stock is already **enabled** in this server.");
-            }
+            if (gcData.enabled) return interaction.reply("✅ PVBR Auto-stock is already **enabled** in this server.");
 
             gcData.enabled = true;
             gcData.channelId = channel.id;
             allData[guildId] = gcData;
             await setData("pvbstock/discord", allData);
 
-            this.startAutoStock(channel);
-            interaction.followUp("✅ PVBR Auto-stock **enabled**! Updates will be sent every restock time.");
+            self.startAutoStock(channel);
+            await interaction.reply("✅ PVBR Auto-stock **enabled**! I’ll now send updates every restock time.");
         }
-
         else if (action === "off") {
-            if (!gcData.enabled) {
-                return interaction.followUp("⚠️ PVBR Auto-stock is already **disabled**.");
-            }
+            if (!gcData.enabled) return interaction.reply("⚠️ PVBR Auto-stock is already **disabled**.");
 
             gcData.enabled = false;
             allData[guildId] = gcData;
             await setData("pvbstock/discord", allData);
 
-            this.stopAutoStock(channel, guildId);
-            interaction.followUp("🛑 PVBR Auto-stock **disabled**. I will stop sending updates.");
+            self.stopAutoStock(channel, guildId);
+            await interaction.reply("🛑 PVBR Auto-stock **disabled**. I will stop sending updates.");
         }
-
         else if (action === "check") {
             const status = gcData.enabled ? "✅ **Enabled**" : "❌ **Disabled**";
             const location = gcData.channelId ? `<#${gcData.channelId}>` : "`None`";
-            const next = this.getNextRestock().toLocaleTimeString("en-PH", { hour12: true });
+            const next = self.getNextRestock().toLocaleTimeString("en-PH", { hour12: true });
 
             const embed = new EmbedBuilder()
                 .setTitle("📊 PVBR Auto-stock Status")
@@ -202,19 +184,38 @@ module.exports = {
                 )
                 .setColor(gcData.enabled ? "Green" : "Red");
 
-            interaction.followUp({ embeds: [embed] });
+            await interaction.reply({ embeds: [embed] });
         }
     },
 
     async onReady(client) {
+        const self = pvbrStock;
         const allData = await getData("pvbstock/discord") || {};
         for (const [guildId, gcData] of Object.entries(allData)) {
             if (gcData.enabled && gcData.channelId) {
                 const guild = client.guilds.cache.get(guildId);
                 if (!guild) continue;
                 const channel = guild.channels.cache.get(gcData.channelId);
-                if (channel) this.startAutoStock(channel);
+                if (channel) self.startAutoStock(channel);
             }
         }
+    },
+
+    dataBuilder() {
+        return new SlashCommandBuilder()
+            .setName("pvbstock")
+            .setDescription("Plants vs Brainrots auto-stock every restock time (Admin only)")
+            .addStringOption(option =>
+                option.setName("action")
+                    .setDescription("Choose on, off, or check")
+                    .setRequired(true)
+                    .addChoices(
+                        { name: "On", value: "on" },
+                        { name: "Off", value: "off" },
+                        { name: "Check", value: "check" }
+                    )
+            );
     }
 };
+
+module.exports = pvbrStock;
