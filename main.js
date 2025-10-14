@@ -3,12 +3,11 @@ const { Client, GatewayIntentBits, Collection, Colors, ActionRowBuilder, ButtonB
 const gradient = require('gradient-string');
 const chalk = require('chalk');
 const fs = require('fs');
-const path = require('path');
-const config = require('./config.js'); // Token at prefix
+const config = require('./config.js');
 const { loadCommands, loadSlashCommands } = require('./utils/commandLoader');
 const loadEvents = require('./utils/eventLoader');
 const { logDiscordMessage, logCommandExecution } = require('./utils/logger');
-const { getData, setData } = require('./database.js'); // Database module
+const { getData, setData } = require('./database.js');
 
 // --- Discord client setup ---
 const client = new Client({
@@ -25,7 +24,7 @@ client.slashCommands = new Collection();
 client.events = new Collection();
 const cooldowns = new Map();
 
-// --- Gradient utils ---
+// --- Gradient helpers ---
 const gradients = {
     lime: gradient('#32CD32', '#ADFF2F'),
     cyan: gradient('#00FFFF', '#00BFFF')
@@ -33,7 +32,7 @@ const gradients = {
 const gradientText = (text, color) => (gradients[color] ? gradients[color](text) : text);
 const boldText = (text) => chalk.bold(text);
 
-// --- Global reload helper ---
+// --- Reload helper ---
 global.cc = {
     reloadCommand: function (commandName) {
         try {
@@ -49,12 +48,11 @@ global.cc = {
     }
 };
 
-// --- Discord ready event ---
+// --- On Ready ---
 client.once('ready', async () => {
     console.log(boldText(gradientText("━━━━━━━━━━[ BOT DEPLOYMENT STARTED ]━━━━━━━━━━━━", 'lime')));
     console.log(boldText(gradientText(`Logged in as ${client.user.tag}`, 'lime')));
 
-    // Load commands, slash commands, events
     loadCommands(client);
     await loadSlashCommands(client);
     loadEvents(client);
@@ -66,16 +64,11 @@ client.once('ready', async () => {
         console.log(gradientText("\n🧹 Clearing old global slash commands...", 'cyan'));
         await client.application.commands.set([]);
 
-        const commands = client.slashCommands.map(command => {
-            if (command.data) {
-                return {
-                    name: command.data.name,
-                    description: command.data.description,
-                    options: command.data.options || [],
-                };
-            }
-            return {};
-        });
+        const commands = client.slashCommands.map(command => ({
+            name: command.data.name,
+            description: command.data.description,
+            options: command.data.options || [],
+        }));
 
         console.log(gradientText(`🚀 Registering ${commands.length} global commands...`, 'lime'));
         await client.application.commands.set(commands);
@@ -84,9 +77,9 @@ client.once('ready', async () => {
         console.error(boldText(gradientText(`❌ Failed to register global commands: ${error.message}`, 'red')));
     }
 
-    // --- Send role selection buttons ONLY ONCE per guild ---
+    // --- Send role selection buttons only once per guild ---
     try {
-        const stockChannelId = '1426904690343284847'; // fixed channel
+        const stockChannelId = '1426904690343284847'; // Channel where role buttons appear
         const allGuildData = await getData('pvb_roles') || {};
         for (const guild of client.guilds.cache.values()) {
             const existingData = allGuildData[guild.id];
@@ -182,13 +175,12 @@ client.on('interactionCreate', async interaction => {
 // --- Prefix command handler ---
 client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
-
     logDiscordMessage(message);
 
     const isMention = message.mentions.has(client.user);
     const hasPrefix = message.content.startsWith(config.prefix);
-
     let content = message.content.trim();
+
     if (isMention) content = content.replace(new RegExp(`^<@!?${client.user.id}>`), '').trim();
     if (hasPrefix) content = content.slice(config.prefix.length).trim();
     if (!content) return;
@@ -224,7 +216,7 @@ client.on('messageCreate', async message => {
 
         try {
             await command.letStart({ args, message, discord: { client } });
-} catch (error) {
+        } catch (error) {
             console.error(`❌ Error executing command: ${error.message}`);
             message.reply(`❌ | ${error.message}`);
         }
@@ -233,15 +225,15 @@ client.on('messageCreate', async message => {
     }
 });
 
-// --- Error handling ---
-process.on('unhandledRejection', (reason, promise) => {
+// --- Error handler ---
+process.on('unhandledRejection', (reason) => {
     console.error('Unhandled Promise Rejection:', reason);
 });
 
-// --- Login Discord ---
+// --- Start bot ---
 client.login(config.token);
 
-// --- Optional: Express health check for Render ---
+// --- Render health check ---
 const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
