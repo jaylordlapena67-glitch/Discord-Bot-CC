@@ -133,6 +133,29 @@ client.once('ready', async () => {
         console.error('❌ Failed to send auto-ping message to stock channel:', err);
     }
 
+    // --- Resume PVBR Auto-stock after restart ---
+    try {
+        const allGuildData = await getData('pvbstock/discord') || {};
+        for (const guildId in allGuildData) {
+            const gcData = allGuildData[guildId];
+            if (gcData.enabled && gcData.channelId) {
+                try {
+                    const guild = await client.guilds.fetch(guildId);
+                    const channel = await guild.channels.fetch(gcData.channelId);
+                    if (channel && channel.isTextBased()) {
+                        const command = client.slashCommands.get('pvbstock');
+                        if (command) command.startAutoStock(channel);
+                        console.log(`✅ PVBR Auto-stock resumed for guild ${guildId} in channel ${channel.id}`);
+                    }
+                } catch (err) {
+                    console.error(`❌ Failed to resume PVBR Auto-stock for guild ${guildId}:`, err);
+                }
+            }
+        }
+    } catch (err) {
+        console.error('❌ Error loading PVBR auto-stock database:', err);
+    }
+
     console.log(boldText(gradientText("━━━━━━━━━━[ READY FOR USE ✅ ]━━━━━━━━━━━━", 'lime')));
 });
 
