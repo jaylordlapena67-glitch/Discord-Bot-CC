@@ -23,10 +23,10 @@ module.exports = {
         "Cactus": "🌵", "Strawberry": "🍓", "Pumpkin": "🎃", "Sunflower": "🌻",
         "Dragon Fruit": "🐉🍉", "Eggplant": "🍆", "Watermelon": "🍉✨", "Grape": "🍇✨",
         "Cocotank": "🥥🛡️", "Carnivorous Plant": "🪴🦷", "King Limone": "🍋", "Mango": "🥭",
-        "Mr Carrot": "🥕🎩", "Tomatrio": "🍅👨‍👦‍👦", "Shroombino": "🍄🎭", "Bat": "⚾",
-        "Water Bucket": "🪣💧", "Frost Grenade": "🧊💣", "Banana Gun": "🍌🔫",
-        "Frost Blower": "❄️🌬️", "Lucky Potion": "🍀🧪", "Speed Potion": "⚡🧪",
-        "Carrot Launcher": "🥕🚀"
+        "Mr Carrot": "🥕🎩", "Tomatrio": "🍅👨‍👦‍👦", "Shroombino": "🍄🎭",
+        "Bat": "⚾", "Water Bucket": "🪣💧", "Frost Grenade": "🧊💣",
+        "Banana Gun": "🍌🔫", "Frost Blower": "❄️🌬️", "Lucky Potion": "🍀🧪",
+        "Speed Potion": "⚡🧪", "Carrot Launcher": "🥕🚀"
     },
 
     CATEGORY_EMOJI: {
@@ -109,10 +109,9 @@ module.exports = {
 
         await channel.send({ embeds: [embed] });
 
-        // Rare seed alert
         const rare = seeds.filter(s => ["godly","secret"].includes(this.getRarity(s.name)));
         if(rare.length){
-            const alert = `🚨 RARE SEED DETECTED 🚨\n\n${rare.map(s=>`${this.getEmoji(s.name)} ${s.name.replace(/ Seed$/i,"")} (${s.currentStock})`).join("\n")}`;
+            const alert = `🚨 **RARE SEED DETECTED** 🚨\n\n${rare.map(s=>`${this.getEmoji(s.name)} ${s.name.replace(/ Seed$/i,"")} (${s.currentStock})`).join("\n")}`;
             await channel.send(alert);
         }
     },
@@ -153,31 +152,57 @@ module.exports = {
         const channel = interaction.channel;
         if(!channel) return interaction.reply("❌ Cannot detect channel!");
 
-        // Check if user has ADMIN role
         const member = interaction.member;
         if(!member.roles.cache.some(r => r.name === "ADMIN")) {
-            return interaction.reply("❌ You must have the ADMIN role to use this command!");
+            return interaction.reply("❌ You must have the `ADMIN` role to use this command.");
         }
 
-        let gcData = (await getData(`pvbstock/discord/${channel.guild.id}`)) || { enabled: false };
+        const guildId = interaction.guild.id;
+        const allData = await getData("pvbstock/discord") || {};
+        const gcData = allData[guildId] || { enabled: false, channelId: null };
 
-        if(action==="on"){
-            if(gcData.enabled) return interaction.reply("⚠️ Auto-stock already active!");
+        if (action === "on") {
+            if (gcData.enabled) {
+                return interaction.reply("✅ PVBR Auto-stock is already **enabled** in this server.");
+            }
+
             gcData.enabled = true;
-            await setData(`pvbstock/discord/${channel.guild.id}`, gcData);
+            gcData.channelId = channel.id; // store the channel to resume after restart
+            allData[guildId] = gcData;
+            await setData("pvbstock/discord", allData);
+
             this.startAutoStock(channel);
-            return interaction.reply("✅ PVBR Auto-stock enabled. Runs every 1,6,11,... +20s delay.");
+            await interaction.reply("✅ PVBR Auto-stock **enabled**! I’ll now send updates every restock time.");
         }
 
-        if(action==="off"){
+        else if (action === "off") {
+            if (!gcData.enabled) {
+                return interaction.reply("⚠️ PVBR Auto-stock is already **disabled**.");
+            }
+
             gcData.enabled = false;
-            await setData(`pvbstock/discord/${channel.guild.id}`, gcData);
-            this.stopAutoStock(channel);
-            return interaction.reply("❌ PVBR Auto-stock disabled.");
+            allData[guildId] = gcData;
+            await setData("pvbstock/discord", allData);
+
+            this.stopAutoStock(channel, guildId);
+            await interaction.reply("🛑 PVBR Auto-stock **disabled**. I will stop sending updates.");
         }
 
-        if(action==="check"){
-            return interaction.reply(`📊 PVBR Auto-stock: ${gcData.enabled ? "ON ✅" : "OFF ❌"}`);
+        else if (action === "check") {
+            const status = gcData.enabled ? "✅ **Enabled**" : "❌ **Disabled**";
+            const location = gcData.channelId ? `<#${gcData.channelId}>` : "`None`";
+            const next = this.getNextRestock().toLocaleTimeString("en-PH", { hour12: true });
+
+            const embed = new EmbedBuilder()
+                .setTitle("📊 PVBR Auto-stock Status")
+                .addFields(
+                    { name: "Status", value: status, inline: true },
+                    { name: "Channel", value: location, inline: true },
+                    { name: "Next Restock (PH)", value: next, inline: true }
+                )
+                .setColor(gcData.enabled ? "Green" : "Red");
+
+            await interaction.reply({ embeds: [embed] });
         }
-    }
+    },
 };
