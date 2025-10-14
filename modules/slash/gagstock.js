@@ -58,8 +58,11 @@ module.exports = {
                 const chunks = [];
                 res.on("data", chunk => chunks.push(chunk));
                 res.on("end", () => {
-                    try { resolve(JSON.parse(Buffer.concat(chunks).toString())); }
-                    catch (err) { reject(err); }
+                    try { 
+                        resolve(JSON.parse(Buffer.concat(chunks).toString())); 
+                    } catch (err) { 
+                        reject(err); 
+                    }
                 });
             });
             req.on("error", e => reject(e));
@@ -73,7 +76,7 @@ module.exports = {
         const next = new Date(now);
         const restockMinutes = [1,6,11,16,21,26,31,36,41,46,51,56];
         const nextM = restockMinutes.find(min => min > m);
-        if(nextM!==undefined) next.setMinutes(nextM);
+        if(nextM !== undefined) next.setMinutes(nextM);
         else { next.setHours(next.getHours()+1); next.setMinutes(1); }
         next.setSeconds(0);
         next.setMilliseconds(0);
@@ -81,29 +84,35 @@ module.exports = {
     },
 
     async sendStock(channel) {
-        const data = await this.fetchStocks();
-        if(!data) return channel.send("⚠️ Failed to fetch GAG stock.");
+        try {
+            const data = await this.fetchStocks();
+            // Key fix: access items safely
+            const items = data?.items || data?.result?.items;
+            if(!items) return channel.send("⚠️ Failed to fetch GAG stock.");
 
-        const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
-        const next = this.getNextRestock();
+            const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
+            const next = this.getNextRestock();
 
-        const embed = new EmbedBuilder()
-            .setTitle("🌱 Grow A Garden Stock Update")
-            .setDescription(`🕒 Current PH Time: ${now.toLocaleTimeString("en-PH",{hour12:true})}\n🕒 Next Restock: ${next.toLocaleTimeString("en-PH",{hour12:true})}`)
-            .addFields(
-                { name: "Items", value: this.formatItems(data.items).slice(0,1024) || "❌ Empty" }
-            )
-            .setColor("Green");
+            const embed = new EmbedBuilder()
+                .setTitle("🌱 Grow A Garden Stock Update")
+                .setDescription(`🕒 Current PH Time: ${now.toLocaleTimeString("en-PH",{hour12:true})}\n🕒 Next Restock: ${next.toLocaleTimeString("en-PH",{hour12:true})}`)
+                .addFields(
+                    { name: "Items", value: this.formatItems(items).slice(0,1024) || "❌ Empty" }
+                )
+                .setColor("Green");
 
-        // Ping only if special items exist
-        const specials = data.items.filter(i => this.SPECIAL_ITEMS.includes(i.name) && (i.quantity ?? 0) > 0);
-        let ping = "";
-        if(specials.length > 0){
-            const roleIds = ["1427560078411563059","1427560648673595402","1427560940068536320"]; // Grand Master, Great Pumpkin, Level-Up Lollipop
-            ping = roleIds.map(id => `<@&${id}>`).join(" ");
+            // Ping special items
+            const specials = items.filter(i => this.SPECIAL_ITEMS.includes(i.name) && (i.quantity ?? 0) > 0);
+            let ping = "";
+            if(specials.length > 0){
+                const roleIds = ["1427560078411563059","1427560648673595402","1427560940068536320"];
+                ping = roleIds.map(id => `<@&${id}>`).join(" ");
+            }
+
+            await channel.send({ content: ping || null, embeds: [embed] });
+        } catch (err) {
+            console.error("Error fetching/sending stock:", err);
         }
-
-        await channel.send({ content: ping || null, embeds: [embed] });
     },
 
     scheduleNext(channel, guildId) {
@@ -159,6 +168,8 @@ module.exports = {
             allData[guildId] = gcData;
             await setData("gagstock/discord", allData);
 
+            // send immediately once
+            await this.sendStock(channel);
             this.startAutoStock(channel);
             return interaction.reply("✅ GAG Auto-stock **enabled**! Updates every restock time.");
         }
@@ -199,7 +210,11 @@ module.exports = {
                 const guild = client.guilds.cache.get(guildId);
                 if (!guild) continue;
                 const channel = guild.channels.cache.get(gcData.channelId);
-                if (channel) this.startAutoStock(channel);
+                if (channel) {
+                    // send immediately once after bot restart
+                    await this.sendStock(channel);
+                    this.startAutoStock(channel);
+                }
             }
         }
     }
