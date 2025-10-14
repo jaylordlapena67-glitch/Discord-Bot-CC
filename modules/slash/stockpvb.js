@@ -82,7 +82,7 @@ module.exports = {
         const next = new Date(now);
         const restockMinutes = [1,6,11,16,21,26,31,36,41,46,51,56];
         const nextM = restockMinutes.find(min => min > m);
-        if(nextM!==undefined) next.setMinutes(nextM);
+        if(nextM !== undefined) next.setMinutes(nextM);
         else { next.setHours(next.getHours()+1); next.setMinutes(1); }
         next.setSeconds(20); next.setMilliseconds(0);
         return next;
@@ -109,7 +109,7 @@ module.exports = {
 
         await channel.send({ embeds: [embed] });
 
-        // Rare seed alert
+        // Rare seed alert with private server links
         const rare = seeds.filter(s => ["godly","secret"].includes(this.getRarity(s.name)));
         if(rare.length){
             const alert = `🚨 RARE SEED DETECTED 🚨\n\n${rare.map(s=>`${this.getEmoji(s.name)} ${s.name.replace(/ Seed$/i,"")} (${s.currentStock})`).join("\n")}\n\n⚡ Join fast! Choose a non-full server:\n` +
@@ -121,62 +121,71 @@ module.exports = {
         }
     },
 
-    scheduleNext(channel) {
+    scheduleNext(guildId, channel) {
         const next = this.getNextRestock();
         const now = new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Manila"}));
         let delay = next.getTime() - now.getTime();
-        if(delay<0) delay += 5*60*1000;
+        if(delay < 0) delay += 5*60*1000;
 
-        const channelId = channel.id;
-        if(this.autoStockTimers[channelId]) clearTimeout(this.autoStockTimers[channelId]);
+        if(this.autoStockTimers[guildId]) clearTimeout(this.autoStockTimers[guildId]);
 
-        this.autoStockTimers[channelId] = setTimeout(async () => {
-            const gcData = await getData(`pvbstock/discord/${channelId}`);
-            if(!gcData?.enabled) return this.stopAutoStock(channel);
+        this.autoStockTimers[guildId] = setTimeout(async () => {
+            const gcData = await getData(`pvbstock/discord/${guildId}`);
+            if(!gcData?.enabled) return this.stopAutoStock(guildId);
 
-            await this.sendStock(channel);
-            this.scheduleNext(channel);
+            const ch = channel.guild.channels.cache.get(gcData.channelId);
+            if(!ch) return console.warn(`Cannot find channel for guild ${guildId}`);
+
+            await this.sendStock(ch);
+            this.scheduleNext(guildId, ch);
         }, delay);
     },
 
-    startAutoStock(channel) {
-        const channelId = channel.id;
-        if(this.autoStockTimers[channelId]) return;
-        this.scheduleNext(channel);
+    startAutoStock(guild, _channel) {
+        const guildId = guild.id;
+        if(this.autoStockTimers[guildId]) return;
+
+        getData(`pvbstock/discord/${guildId}`).then(gcData => {
+            if(!gcData?.enabled) return;
+            const channel = guild.channels.cache.get(gcData.channelId);
+            if(!channel) return console.warn(`Cannot find channel for guild ${guildId}`);
+            this.scheduleNext(guildId, channel);
+        });
     },
 
-    stopAutoStock(channel){
-        const channelId = channel.id;
-        if(this.autoStockTimers[channelId]){
-            clearTimeout(this.autoStockTimers[channelId]);
-            delete this.autoStockTimers[channelId];
+    stopAutoStock(guildId){
+        if(this.autoStockTimers[guildId]){
+            clearTimeout(this.autoStockTimers[guildId]);
+            delete this.autoStockTimers[guildId];
         }
     },
 
     async execute(interaction) {
         const action = interaction.options.getString("action");
-        const channel = interaction.channel;
-        if (!channel) return interaction.reply("❌ Cannot detect channel!");
+        const guildId = interaction.guild.id;
+        const channelId = interaction.channel.id;
 
-        let gcData = (await getData(`pvbstock/discord/${channel.id}`)) || { enabled: false };
+        let gcData = (await getData(`pvbstock/discord/${guildId}`)) || { enabled: false, channelId };
 
         if(action==="on"){
-            if(gcData.enabled) return interaction.reply("⚠️ Auto-stock already active!");
             gcData.enabled = true;
-            await setData(`pvbstock/discord/${channel.id}`, gcData);
-            this.startAutoStock(channel);
-            return interaction.reply("✅ PVBR Auto-stock enabled. Runs every 1,6,11,... +20s delay.");
+            gcData.channelId = channelId;
+            await setData(`pvbstock/discord/${guildId}`, gcData);
+            this.startAutoStock(interaction.guild, interaction.channel);
+
+            return interaction.reply(`✅ PVBR Auto-stock enabled in <#${channelId}>. Runs every 1,6,11,... +20s delay.`);
         }
 
         if(action==="off"){
             gcData.enabled = false;
-            await setData(`pvbstock/discord/${channel.id}`, gcData);
-            this.stopAutoStock(channel);
+            await setData(`pvbstock/discord/${guildId}`, gcData);
+            this.stopAutoStock(guildId);
+
             return interaction.reply("❌ PVBR Auto-stock disabled.");
         }
 
         if(action==="check"){
-            return interaction.reply(`📊 PVBR Auto-stock: ${gcData.enabled ? "ON ✅" : "OFF ❌"}`);
+            return interaction.reply(`📊 PVBR Auto-stock: ${gcData.enabled ? "ON ✅" : "OFF ❌"} in <#${gcData.channelId}>`);
         }
     }
 };
