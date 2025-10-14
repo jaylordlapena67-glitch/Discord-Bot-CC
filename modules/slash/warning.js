@@ -94,14 +94,17 @@ module.exports = {
         .addUserOption(opt => opt.setName("target").setDescription("User to warn").setRequired(true))
         .addStringOption(opt => opt.setName("reason").setDescription("Reason for warning").setRequired(true))
     )
-    .addSubcommand(sub => sub.setName("list").setDescription("List all warnings in this server")))
+    .addSubcommand(sub => 
+      sub.setName("list")
+        .setDescription("List all warnings in this server")
+    )
     .addSubcommand(sub => 
       sub.setName("reset")
         .setDescription("Reset warnings for a user or all")
         .addUserOption(opt => opt.setName("target").setDescription("User to reset warnings for"))
-        .addBooleanOption(opt => opt.setName("all").setDescription("Reset all warnings")))
-  ,
-  
+        .addBooleanOption(opt => opt.setName("all").setDescription("Reset all warnings"))
+    ),
+
   async execute(interaction) {
     const guildId = interaction.guild.id;
     const channel = interaction.channel;
