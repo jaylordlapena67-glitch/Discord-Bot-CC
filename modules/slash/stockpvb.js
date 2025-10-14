@@ -5,7 +5,7 @@ const { setData, getData } = require("../../../database.js");
 module.exports = {
     data: new SlashCommandBuilder()
         .setName("pvbstock")
-        .setDescription("Plants vs Brainrots auto-stock every restock time + rare alerts (Admin only)")
+        .setDescription("Plants vs Brainrots auto-stock every restock time (Admin only)")
         .addStringOption(option =>
             option.setName("action")
                 .setDescription("Choose on, off, or check")
@@ -107,13 +107,11 @@ module.exports = {
             )
             .setColor("Green");
 
-        await channel.send({ embeds: [embed] });
+        // --- Fixed PVBR ping roles ---
+        const pvbrRoleIds = ['1427517229129404477','1427517104780869713']; // SECRET + GODLY roles
+        const ping = pvbrRoleIds.map(id => `<@&${id}>`).join(' ');
 
-        const rare = seeds.filter(s => ["godly","secret"].includes(this.getRarity(s.name)));
-        if(rare.length){
-            const alert = `🚨 **RARE SEED DETECTED** 🚨\n\n${rare.map(s=>`${this.getEmoji(s.name)} ${s.name.replace(/ Seed$/i,"")} (${s.currentStock})`).join("\n")}`;
-            await channel.send(alert);
-        }
+        await channel.send({ content: ping, embeds: [embed] });
     },
 
     scheduleNext(channel, guildId) {
