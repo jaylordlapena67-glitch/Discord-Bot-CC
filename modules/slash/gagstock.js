@@ -23,9 +23,9 @@ const ITEM_EMOJI = {
   "Medium Treat": "🍪", "Medium Toy": "🧸", "Night Staff": "🌙",
   "Star Caller": "⭐", "Garden Guide": "📖", "Godly Sprinkler": "🌪️",
   "Chocolate Sprinkler": "🍫", "Magnifying Glass": "🔍",
-  "Master Sprinkler": "🌟💦", "Grandmaster Sprinkler": "🌊🔥",
+  "Master Sprinkler": "🌟💦", "Grand Master": "🌊🔥",
   "Honey Sprinkler": "🍯💦", "Favorite Tool": "🛠️",
-  "Silver Fertilizer": "⚪", "Level Up Lollipop": "🍭"
+  "Silver Fertilizer": "⚪", "Level-Up Lollipop": "🍭", "Great Pumpkin": "🎃", "Crimson Thorn": "🌹🔥"
 };
 
 function getEmoji(name) {
@@ -63,11 +63,8 @@ function fetchStocks() {
       const chunks = [];
       res.on("data", chunk => chunks.push(chunk));
       res.on("end", () => {
-        try {
-          resolve(JSON.parse(Buffer.concat(chunks).toString()));
-        } catch (err) {
-          reject(err);
-        }
+        try { resolve(JSON.parse(Buffer.concat(chunks).toString())); }
+        catch (err) { reject(err); }
       });
     });
     req.on("error", e => reject(e));
@@ -104,13 +101,22 @@ async function sendStock(channel) {
     )
     .setFooter({ text: "Updates every 5 minutes" });
 
-  await channel.send({ embeds: [embed] });
+  // Auto ping if seeds of interest appear
+  const pingRoles = [];
+  const importantSeeds = ["Grand Master", "Great Pumpkin", "Level-Up Lollipop", "Crimson Thorn"];
+  for (const seed of importantSeeds) {
+    if ((data.seedsStock || []).some(s => s.name === seed && s.quantity > 0)) {
+      pingRoles.push(`<@&${gcData.roleIds?.[seed]}>`);
+    }
+  }
+
+  const content = pingRoles.length ? pingRoles.join(" ") : null;
+  await channel.send({ content, embeds: [embed] });
 }
 
 async function startAutoStock(channel) {
   const gcData = await getData(`stock/${channel.id}`);
   if (!gcData?.enabled) return;
-
   if (autoStockTimers[channel.id]) return;
 
   const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
@@ -124,14 +130,8 @@ async function startAutoStock(channel) {
 }
 
 function stopAutoStock(channelId) {
-  if (autoStockTimers[channelId]) {
-    clearInterval(autoStockTimers[channelId]);
-    delete autoStockTimers[channelId];
-  }
-  if (autoStockTimeouts[channelId]) {
-    clearTimeout(autoStockTimeouts[channelId]);
-    delete autoStockTimeouts[channelId];
-  }
+  if (autoStockTimers[channelId]) { clearInterval(autoStockTimers[channelId]); delete autoStockTimers[channelId]; }
+  if (autoStockTimeouts[channelId]) { clearTimeout(autoStockTimeouts[channelId]); delete autoStockTimeouts[channelId]; }
 }
 
 module.exports = {
@@ -141,12 +141,9 @@ module.exports = {
     const option = args[0]?.toLowerCase();
     const channel = message.channel;
 
-    // ✅ Only admins can use
-    if (!message.member.permissions.has("Administrator")) {
-      return message.reply("❌ Only **server admins** can use this command.");
-    }
+    if (!message.member.permissions.has("Administrator")) return message.reply("❌ Only **server admins** can use this command.");
 
-    let gcData = (await getData(`stock/${channel.id}`)) || { enabled: false };
+    let gcData = (await getData(`stock/${channel.id}`)) || { enabled: false, roleIds: {} };
 
     if (option === "on") {
       if (gcData.enabled) return message.reply("⚠️ Auto-stock already **enabled**.");
@@ -171,16 +168,13 @@ module.exports = {
     return message.reply("⚙️ Usage: `gagstock on | off | check`");
   },
 
-  // 🔁 Resume auto stock when bot restarts
   async onLoad(client) {
     const allData = (await getData("stock")) || {};
     for (const id in allData) {
       if (allData[id].enabled) {
         const channel = await client.channels.fetch(id).catch(() => null);
-        if (channel) {
-          startAutoStock(channel);
-          channel.send("♻️ Bot restarted — auto-stock resumed.");
-        }
+        if (channel) startAutoStock(channel); // Keep auto-resume
+        // channel.send("♻️ Bot restarted — auto-stock resumed."); // Optional
       } else stopAutoStock(id);
     }
   }
