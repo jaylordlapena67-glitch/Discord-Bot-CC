@@ -1,11 +1,10 @@
 // main.js
-
-const { Client, GatewayIntentBits, Collection, Colors } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, Colors, REST, Routes } = require('discord.js');
 const gradient = require('gradient-string');
 const chalk = require('chalk');
 const fs = require('fs');
 const path = require('path');
-const config = require('./config.js'); // Direct require ng config.js
+const config = require('./config.js');
 const { loadCommands, loadSlashCommands } = require('./utils/commandLoader');
 const loadEvents = require('./utils/eventLoader');
 const { logDiscordMessage, logCommandExecution } = require('./utils/logger');
@@ -85,32 +84,20 @@ client.once('ready', async () => {
     console.log(gradientText(`Stickers: ${stickers.length}`, 'lime'));
     console.log(gradientText(`Emoji: ${emoji.length}`, 'lime'));
 
+    // ✅ Deploy slash commands globally (Render-safe)
     try {
-        const guilds = client.guilds.cache.map(guild => guild.id);
-        for (const guildId of guilds) {
-            const commands = client.slashCommands.map(command => {
-                if (command.data) {
-                    return {
-                        name: command.data.name,
-                        description: command.data.description,
-                        options: command.data.options || [],
-                    };
-                }
-                return {};
-            });
-
-            await client.application.commands.set(commands, guildId);
-        }
-        console.log(boldText(gradientText("✅ Slash commands registered successfully.", 'lime')));
+        const commands = client.slashCommands.map(cmd => cmd.data.toJSON());
+        const rest = new REST({ version: "10" }).setToken(config.token);
+        await rest.put(Routes.applicationCommands(config.client_id), { body: commands });
+        console.log(boldText(gradientText("✅ Global slash commands deployed successfully.", 'lime')));
     } catch (error) {
-        console.error(boldText(gradientText(`❌ Failed to register slash commands: ${error.message}`, 'red')));
+        console.error(boldText(gradientText(`❌ Failed to deploy slash commands: ${error.message}`, 'red')));
     }
 });
 
-// --- Message handling ---
+// --- Message handler ---
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
-
     logDiscordMessage(message);
 
     const isMention = message.mentions.has(client.user);
@@ -133,10 +120,8 @@ client.on('messageCreate', async (message) => {
             if (cooldowns.has(cooldownKey)) {
                 const expirationTime = cooldowns.get(cooldownKey) + cooldownTime * 1000;
                 const now = Date.now();
-
                 if (now < expirationTime) {
                     const remainingTime = ((expirationTime - now) / 1000).toFixed(1);
-
                     const cooldownEmbed = {
                         color: Colors.Blurple,
                         title: "⏳ Command Cooldown",
@@ -144,7 +129,6 @@ client.on('messageCreate', async (message) => {
                         timestamp: new Date(),
                         footer: { text: "Cooldown System", icon_url: client.user.displayAvatarURL() }
                     };
-
                     const cooldownMsg = await message.reply({ embeds: [cooldownEmbed] });
                     setTimeout(() => cooldownMsg.delete().catch(() => {}), 30000);
                     return;
@@ -153,14 +137,12 @@ client.on('messageCreate', async (message) => {
 
             cooldowns.set(cooldownKey, Date.now());
             logCommandExecution(message, command, args);
-
             try {
                 await command.letStart({ args, message, discord: { client } });
             } catch (error) {
                 console.error(`❌ Error executing command: ${error.message}`);
                 message.reply(`❌ | ${error.message}`);
             }
-
             if (cooldownTime > 0) setTimeout(() => cooldowns.delete(cooldownKey), cooldownTime * 1000);
         }
     }
@@ -169,7 +151,6 @@ client.on('messageCreate', async (message) => {
 // --- Slash commands ---
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isCommand()) return;
-
     const command = client.slashCommands.get(interaction.commandName);
     if (command) {
         try {
@@ -182,18 +163,14 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 // --- Error handling ---
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('Unhandled Promise Rejection:', reason);
-});
+process.on('unhandledRejection', (reason) => console.error('Unhandled Promise Rejection:', reason));
 
-// --- Login Discord ---
-client.login(config.token);
-
-// --- Optional: Express health check for Render ---
+// --- Start Express for Render ---
 const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
-
 app.get('/', (req, res) => res.send('Bot is running!'));
+app.listen(PORT, () => console.log(`🌐 Render web server active on port ${PORT}`));
 
-app.listen(PORT, () => console.log(`Web server listening on port ${PORT}`));
+// --- Login bot ---
+client.login(config.token);
