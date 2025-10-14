@@ -49,7 +49,7 @@ module.exports = {
             headers: {
                 accept: "*/*",
                 "content-type": "application/json",
-                referer: "https://growagarden.gg/stocks",
+                referer: "https://growagarden.gg/api/stocks",
                 "user-agent": "Mozilla/5.0"
             },
         };
