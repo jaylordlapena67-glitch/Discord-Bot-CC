@@ -109,13 +109,10 @@ module.exports = {
 
         await channel.send({ embeds: [embed] });
 
+        // Rare seed alert
         const rare = seeds.filter(s => ["godly","secret"].includes(this.getRarity(s.name)));
         if(rare.length){
-            const alert = `🚨 RARE SEED DETECTED 🚨\n\n${rare.map(s=>`${this.getEmoji(s.name)} ${s.name.replace(/ Seed$/i,"")} (${s.currentStock})`).join("\n")}\n\n⚡ Join fast! Choose a non-full server:\n` +
-                `https://www.roblox.com/share?code=5a9bf02c4952464eaf9c0ae66eb456bf&type=Server\n` +
-                `https://www.roblox.com/share?code=d1afbbba2d5ed946b83caeb423a09e37&type=Server\n` +
-                `https://www.roblox.com/share?code=a7e01c0a62c66e4c8a572cd79e77070e&type=Server\n` +
-                `https://www.roblox.com/share?code=f9b0d9025486cb4494514ad5ee9cce54&type=Server`;
+            const alert = `🚨 RARE SEED DETECTED 🚨\n\n${rare.map(s=>`${this.getEmoji(s.name)} ${s.name.replace(/ Seed$/i,"")} (${s.currentStock})`).join("\n")}`;
             await channel.send(alert);
         }
     },
@@ -155,6 +152,12 @@ module.exports = {
         const action = interaction.options.getString("action");
         const channel = interaction.channel;
         if(!channel) return interaction.reply("❌ Cannot detect channel!");
+
+        // Check if user has ADMIN role
+        const member = interaction.member;
+        if(!member.roles.cache.some(r => r.name === "ADMIN")) {
+            return interaction.reply("❌ You must have the ADMIN role to use this command!");
+        }
 
         let gcData = (await getData(`pvbstock/discord/${channel.guild.id}`)) || { enabled: false };
 
