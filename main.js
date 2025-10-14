@@ -1,10 +1,10 @@
 // main.js
-const { Client, GatewayIntentBits, Collection, Colors, REST, Routes } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, Colors } = require('discord.js');
 const gradient = require('gradient-string');
 const chalk = require('chalk');
 const fs = require('fs');
 const path = require('path');
-const config = require('./config.js');
+const config = require('./config.js'); // Make sure TOKEN is here
 const { loadCommands, loadSlashCommands } = require('./utils/commandLoader');
 const loadEvents = require('./utils/eventLoader');
 const { logDiscordMessage, logCommandExecution } = require('./utils/logger');
@@ -65,39 +65,52 @@ global.cc = {
 
 // --- Discord ready event ---
 client.once('ready', async () => {
-    console.log(boldText(gradientText("━━━━━━━━━━[ BOT DEPLOYMENT ]━━━━━━━━━━━━", 'lime')));
+    console.log(boldText(gradientText("━━━━━━━━━━[ BOT DEPLOYMENT STARTED ]━━━━━━━━━━━━", 'lime')));
     console.log(boldText(gradientText(`Logged in as ${client.user.tag}`, 'lime')));
-    console.log(boldText(gradientText("━━━━━━━━━━[ LOADING... ]━━━━━━━━━━━━", 'cyan')));
+    console.log(boldText(gradientText("━━━━━━━━━━[ LOADING COMMANDS & EVENTS ]━━━━━━━━━━━━", 'cyan')));
 
+    // Load all local commands, slash commands, and events
     loadCommands(client);
     await loadSlashCommands(client);
     loadEvents(client);
 
-    console.log(boldText(gradientText("[ DEPLOYED ALL SYSTEMS ]", 'lime')));
+    console.log(boldText(gradientText("[ DEPLOY COMPLETE ]", 'lime')));
     console.log(gradient.cristal(`╔════════════════════`));          
     console.log(gradient.cristal(`║ BotName: ${client.user.tag}`));  
     console.log(gradient.cristal(`║ Prefix: ${config.prefix}`));  
     console.log(gradient.cristal(`╚════════════════════`));          
 
-    console.log(boldText(gradientText("Database Status Discord", 'cyan')));
-    console.log(gradientText(`Users: ${users.length}`, 'lime'));
-    console.log(gradientText(`Stickers: ${stickers.length}`, 'lime'));
-    console.log(gradientText(`Emoji: ${emoji.length}`, 'lime'));
-
-    // ✅ Deploy slash commands globally (Render-safe)
+    // --- Global slash command registration ---
     try {
-        const commands = client.slashCommands.map(cmd => cmd.data.toJSON());
-        const rest = new REST({ version: "10" }).setToken(config.token);
-        await rest.put(Routes.applicationCommands(config.client_id), { body: commands });
-        console.log(boldText(gradientText("✅ Global slash commands deployed successfully.", 'lime')));
+        console.log(gradientText("\n🧹 Clearing old global slash commands...", 'cyan'));
+        await client.application.commands.set([]); // Clears all old global commands
+
+        const commands = client.slashCommands.map(command => {
+            if (command.data) {
+                return {
+                    name: command.data.name,
+                    description: command.data.description,
+                    options: command.data.options || [],
+                };
+            }
+            return {};
+        });
+
+        console.log(gradientText(`🚀 Registering ${commands.length} global commands...`, 'lime'));
+        await client.application.commands.set(commands);
+
+        console.log(boldText(gradientText("\n✅ Global slash commands registered successfully!", 'lime')));
     } catch (error) {
-        console.error(boldText(gradientText(`❌ Failed to deploy slash commands: ${error.message}`, 'red')));
+        console.error(boldText(gradientText(`❌ Failed to register global commands: ${error.message}`, 'red')));
     }
+
+    console.log(boldText(gradientText("━━━━━━━━━━[ READY FOR USE ✅ ]━━━━━━━━━━━━", 'lime')));
 });
 
-// --- Message handler ---
+// --- Message handling (prefix commands) ---
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
+
     logDiscordMessage(message);
 
     const isMention = message.mentions.has(client.user);
@@ -120,6 +133,7 @@ client.on('messageCreate', async (message) => {
             if (cooldowns.has(cooldownKey)) {
                 const expirationTime = cooldowns.get(cooldownKey) + cooldownTime * 1000;
                 const now = Date.now();
+
                 if (now < expirationTime) {
                     const remainingTime = ((expirationTime - now) / 1000).toFixed(1);
                     const cooldownEmbed = {
@@ -137,20 +151,23 @@ client.on('messageCreate', async (message) => {
 
             cooldowns.set(cooldownKey, Date.now());
             logCommandExecution(message, command, args);
+
             try {
                 await command.letStart({ args, message, discord: { client } });
             } catch (error) {
                 console.error(`❌ Error executing command: ${error.message}`);
                 message.reply(`❌ | ${error.message}`);
             }
+
             if (cooldownTime > 0) setTimeout(() => cooldowns.delete(cooldownKey), cooldownTime * 1000);
         }
     }
 });
 
-// --- Slash commands ---
+// --- Slash commands handling ---
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isCommand()) return;
+
     const command = client.slashCommands.get(interaction.commandName);
     if (command) {
         try {
@@ -163,14 +180,17 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 // --- Error handling ---
-process.on('unhandledRejection', (reason) => console.error('Unhandled Promise Rejection:', reason));
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Promise Rejection:', reason);
+});
 
-// --- Start Express for Render ---
+// --- Login Discord ---
+client.login(config.token);
+
+// --- Optional: Express health check for Render ---
 const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
-app.get('/', (req, res) => res.send('Bot is running!'));
-app.listen(PORT, () => console.log(`🌐 Render web server active on port ${PORT}`));
 
-// --- Login bot ---
-client.login(config.token);
+app.get('/', (req, res) => res.send('Bot is running!'));
+app.listen(PORT, () => console.log(`Web server listening on port ${PORT}`));
