@@ -1,9 +1,8 @@
 const https = require("https");
-const { EmbedBuilder } = require("discord.js");
+const { EmbedBuilder, PermissionsBitField } = require("discord.js");
 const { getData, setData } = require("../../../database.js");
 
 const autoStockTimers = {};
-const autoStockTimeouts = {};
 
 const ITEM_EMOJI = {
   "Carrot": "🥕", "Strawberry": "🍓", "Blueberry": "🫐", "Orange Tulip": "🌷",
@@ -14,10 +13,8 @@ const ITEM_EMOJI = {
   "Sugar Apple": "🍏", "Burning Bud": "🔥🌱", "Giant Pinecone": "🌲",
   "Elder Strawberry": "🍓✨", "Romanesco": "🥦", "Potato": "🥔",
   "Brussels Sprouts": "🥬", "Cocomango": "🥭🥥", "Broccoli": "🥦",
-
   "Common Egg": "🥚", "Uncommon Egg": "🥚✨", "Rare Egg": "🥚💎",
   "Legendary Egg": "🥚🌟", "Mythical Egg": "🥚🔥", "Bug Egg": "🐛🥚",
-
   "Watering Can": "💧", "Trowel": "🔨", "Trading Ticket": "🎟️",
   "Recall Wrench": "🔧", "Basic Sprinkler": "🌊", "Advanced Sprinkler": "💦",
   "Medium Treat": "🍪", "Medium Toy": "🧸", "Night Staff": "🌙",
@@ -37,36 +34,23 @@ function getNextRestock() {
   const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
   const m = now.getMinutes();
   const next = new Date(now);
-
   const restockMinutes = [1,6,11,16,21,26,31,36,41,46,51,56];
   const nextM = restockMinutes.find(min => min > m);
-
   if(nextM !== undefined) next.setMinutes(nextM);
-  else { next.setHours(next.getHours()+1); next.setMinutes(1); }
-
+  else next.setHours(next.getHours()+1), next.setMinutes(1);
   next.setSeconds(20);
   next.setMilliseconds(0);
   return next;
 }
 
 function fetchStocks() {
-  const options = {
-    method: "GET",
-    hostname: "growagarden.gg",
-    path: "/api/stock",
-    headers: {
-      accept: "*/*",
-      "content-type": "application/json",
-      referer: "https://growagarden.gg/stocks"
-    }
-  };
   return new Promise((resolve, reject) => {
-    const req = https.request(options, (res) => {
+    const req = https.get("https://growagarden.gg/api/stock", res => {
       const chunks = [];
       res.on("data", chunk => chunks.push(chunk));
       res.on("end", () => {
         try { resolve(JSON.parse(Buffer.concat(chunks).toString())); }
-        catch (err) { reject(err); }
+        catch(e) { reject(e); }
       });
     });
     req.on("error", e => reject(e));
@@ -80,34 +64,39 @@ function formatSectionText(items) {
 }
 
 async function sendStock(channel) {
-  const gcData = await getData(`stock/${channel.id}`);
-  if (!gcData?.enabled) return;
+  try {
+    const allData = await getData("stock") || {};
+    const gcData = allData[channel.id];
+    if (!gcData?.enabled) return;
 
-  const data = await fetchStocks();
-  if (!data) return;
+    const data = await fetchStocks();
+    if (!data) return;
 
-  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
-  const next = getNextRestock();
+    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
+    const next = getNextRestock();
 
-  const embed = new EmbedBuilder()
-    .setColor("#00ff80")
-    .setTitle("🌱 GrowAGarden Auto-Stock Update")
-    .setDescription(
-      `🕒 **Current PH Time:** ${now.toLocaleTimeString("en-PH", { hour12: false })}\n` +
-      `🔄 **Next Restock:** ${next.toLocaleTimeString("en-PH", { hour12: false })}`
-    )
-    .addFields(
-      { name: "🛠️ Gear", value: formatSectionText(data.gearStock), inline: false },
-      { name: "🥚 Eggs", value: formatSectionText(data.eggStock), inline: false },
-      { name: "🌱 Seeds", value: formatSectionText(data.seedsStock), inline: false }
-    )
-    .setFooter({ text: "Updates every restock time" });
+    const embed = new EmbedBuilder()
+      .setColor("#00ff80")
+      .setTitle("🌱 GrowAGarden Auto-Stock Update")
+      .setDescription(
+        `🕒 **Current PH Time:** ${now.toLocaleTimeString("en-PH", { hour12: false })}\n` +
+        `🔄 **Next Restock:** ${next.toLocaleTimeString("en-PH", { hour12: false })}`
+      )
+      .addFields(
+        { name: "🛠️ Gear", value: formatSectionText(data.gearStock), inline: false },
+        { name: "🥚 Eggs", value: formatSectionText(data.eggStock), inline: false },
+        { name: "🌱 Seeds", value: formatSectionText(data.seedsStock), inline: false }
+      )
+      .setFooter({ text: "Updates every restock time" });
 
-  await channel.send({ embeds: [embed] });
+    await channel.send({ embeds: [embed] });
 
-  // Auto ping roles if configured
-  if(gcData.pingRoles?.length) {
-    await channel.send(`${gcData.pingRoles.map(id => `<@&${id}>`).join(" ")}`);
+    // Auto ping roles
+    if(gcData.pingRoles?.length) {
+      await channel.send(`${gcData.pingRoles.map(id => `<@&${id}>`).join(" ")}`);
+    }
+  } catch(e) {
+    console.error(`[GAG STOCK] Failed to send stock to ${channel.id}:`, e);
   }
 }
 
@@ -118,7 +107,6 @@ async function scheduleNext(channel) {
   if(delay < 0) delay += 5*60*1000;
 
   if(autoStockTimers[channel.id]) clearTimeout(autoStockTimers[channel.id]);
-
   autoStockTimers[channel.id] = setTimeout(async () => {
     await sendStock(channel);
     scheduleNext(channel);
@@ -131,45 +119,45 @@ function startAutoStock(channel) {
 }
 
 function stopAutoStock(channelId) {
-  if(autoStockTimers[channelId]) {
+  if(autoStockTimers[channelId]){
     clearTimeout(autoStockTimers[channelId]);
     delete autoStockTimers[channelId];
-  }
-  if(autoStockTimeouts[channelId]) {
-    clearTimeout(autoStockTimeouts[channelId]);
-    delete autoStockTimeouts[channelId];
   }
 }
 
 module.exports = {
   name: "gagstock",
-  description: "Enable/disable GrowAGarden auto-stock updates (aligned with PVBR)",
+  description: "Enable/disable GrowAGarden auto-stock updates",
+  
   async execute(message, args) {
     const option = args[0]?.toLowerCase();
     const channel = message.channel;
 
-    if (!message.member.permissions.has("Administrator")) {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
       return message.reply("❌ Only **server admins** can use this command.");
     }
 
-    let gcData = (await getData(`stock/${channel.id}`)) || { enabled: false, pingRoles: [] };
+    const allData = await getData("stock") || {};
+    const gcData = allData[channel.id] || { enabled: false, pingRoles: [] };
 
-    if (option === "on") {
-      if (gcData.enabled) return message.reply("⚠️ Auto-stock already **enabled**.");
+    if(option === "on") {
+      if(gcData.enabled) return message.reply("⚠️ Auto-stock already **enabled**.");
       gcData.enabled = true;
-      await setData(`stock/${channel.id}`, gcData);
+      allData[channel.id] = gcData;
+      await setData("stock", allData);
       startAutoStock(channel);
       return message.reply("✅ Auto-stock **enabled**. Updates every restock time.");
     }
 
-    if (option === "off") {
+    if(option === "off") {
       gcData.enabled = false;
-      await setData(`stock/${channel.id}`, gcData);
+      allData[channel.id] = gcData;
+      await setData("stock", allData);
       stopAutoStock(channel.id);
       return message.reply("❌ Auto-stock **disabled**.");
     }
 
-    if (option === "check") {
+    if(option === "check") {
       const status = gcData.enabled ? "🟢 ON" : "🔴 OFF";
       return message.reply(`📊 Auto-stock status: **${status}**`);
     }
@@ -177,13 +165,12 @@ module.exports = {
     return message.reply("⚙️ Usage: `gagstock on | off | check`");
   },
 
-  // Auto resume on restart
   async onLoad(client) {
-    const allData = (await getData("stock")) || {};
-    for (const id in allData) {
-      const channelData = allData[id];
-      if(channelData.enabled) {
-        const channel = await client.channels.fetch(id).catch(()=>null);
+    const allData = await getData("stock") || {};
+    for (const channelId in allData) {
+      const channelData = allData[channelId];
+      if(channelData.enabled){
+        const channel = await client.channels.fetch(channelId).catch(()=>null);
         if(channel) startAutoStock(channel);
       }
     }
