@@ -8,7 +8,7 @@ const { getData, setData } = require('./database.js');
 const { logDiscordMessage, logCommandExecution } = require('./utils/logger');
 
 // Import warn module
-const warnModule = require('./modules/slash/warning.js'); // correct path
+const warnModule = require('./modules/commands/warning.js'); // correct path
 
 const client = new Client({
     intents: [
