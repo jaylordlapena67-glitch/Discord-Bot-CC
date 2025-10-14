@@ -30,7 +30,7 @@ module.exports = {
         "Honey Sprinkler": "🍯💦", "Level Up Lollipop": "🍭"
     },
 
-    SPECIAL_ITEMS: ["Grand Master", "Great Pumpkin", "Level-Up Lollipop"],
+    SPECIAL_ITEMS: ["grandmaster sprinkler","master sprinkler","level up lollipop"],
 
     getEmoji(name) {
         return this.ITEM_EMOJI[name] || "❔";
@@ -88,15 +88,21 @@ module.exports = {
             const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
             const next = this.getNextAligned();
 
+            const allItems = [
+                ...(data.gearStock || []),
+                ...(data.eggStock || []),
+                ...(data.seedsStock || [])
+            ];
+
             const embed = new EmbedBuilder()
                 .setTitle("🌱 Grow A Garden Stock Update")
                 .setDescription(`🕒 Current PH Time: ${now.toLocaleTimeString("en-PH",{hour12:true})}\n🕒 Next Restock: ${next.toLocaleTimeString("en-PH",{hour12:true})}`)
                 .addFields(
-                    { name: "Items", value: this.formatItems(data.items).slice(0,1024) || "❌ Empty" }
+                    { name: "Stock Items", value: this.formatItems(allItems).slice(0,1024) || "❌ Empty" }
                 )
                 .setColor("Green");
 
-            const specials = (data.items || []).filter(i => this.SPECIAL_ITEMS.includes(i.name) && (i.quantity ?? 0) > 0);
+            const specials = allItems.filter(i => this.SPECIAL_ITEMS.some(s => i.name.toLowerCase().includes(s)) && (i.quantity ?? 0) > 0);
             let ping = "";
             if(specials.length > 0){
                 const roleIds = ["1427560078411563059","1427560648673595402","1427560940068536320"];
@@ -104,6 +110,7 @@ module.exports = {
             }
 
             await channel.send({ content: ping || null, embeds: [embed] });
+
         } catch (err) {
             console.error("Error fetching/sending stock:", err);
         }
@@ -118,13 +125,13 @@ module.exports = {
 
         this.autoStockTimers[guildId] = setTimeout(async () => {
             await this.sendStock(channel);
-            this.scheduleNext(channel, guildId); // recursive scheduling
+            this.scheduleNext(channel, guildId);
         }, delay);
     },
 
     startAutoStock(channel) {
         const guildId = channel.guild.id;
-        this.scheduleNext(channel, guildId); // aligned scheduling
+        this.scheduleNext(channel, guildId);
     },
 
     stopAutoStock(channel, guildId=null){
@@ -156,10 +163,7 @@ module.exports = {
             allData[guildId] = gcData;
             await setData("gagstock/discord", allData);
 
-            // ✅ Send immediately
             await this.sendStock(channel);
-
-            // ✅ Schedule aligned restock
             this.startAutoStock(channel);
 
             return interaction.reply("✅ GAG Auto-stock **enabled**! Updates every aligned restock time.");
