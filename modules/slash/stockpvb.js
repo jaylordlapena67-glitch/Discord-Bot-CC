@@ -109,7 +109,7 @@ module.exports = {
 
         await channel.send({ embeds: [embed] });
 
-        // Rare seed alert with private server links
+        // Rare seed alert
         const rare = seeds.filter(s => ["godly","secret"].includes(this.getRarity(s.name)));
         if(rare.length){
             const alert = `🚨 RARE SEED DETECTED 🚨\n\n${rare.map(s=>`${this.getEmoji(s.name)} ${s.name.replace(/ Seed$/i,"")} (${s.currentStock})`).join("\n")}\n\n⚡ Join fast! Choose a non-full server:\n` +
@@ -131,7 +131,7 @@ module.exports = {
         if(this.autoStockTimers[channelId]) clearTimeout(this.autoStockTimers[channelId]);
 
         this.autoStockTimers[channelId] = setTimeout(async () => {
-            const gcData = await getData(`pvbstock/${channelId}`);
+            const gcData = await getData(`pvbstock/discord/${channelId}`);
             if(!gcData?.enabled) return this.stopAutoStock(channel);
 
             await this.sendStock(channel);
@@ -156,19 +156,21 @@ module.exports = {
     async execute(interaction) {
         const action = interaction.options.getString("action");
         const channel = interaction.channel;
-        let gcData = (await getData(`pvbstock/${channel.id}`)) || { enabled: false };
+        if (!channel) return interaction.reply("❌ Cannot detect channel!");
+
+        let gcData = (await getData(`pvbstock/discord/${channel.id}`)) || { enabled: false };
 
         if(action==="on"){
             if(gcData.enabled) return interaction.reply("⚠️ Auto-stock already active!");
             gcData.enabled = true;
-            await setData(`pvbstock/${channel.id}`, gcData);
+            await setData(`pvbstock/discord/${channel.id}`, gcData);
             this.startAutoStock(channel);
             return interaction.reply("✅ PVBR Auto-stock enabled. Runs every 1,6,11,... +20s delay.");
         }
 
         if(action==="off"){
             gcData.enabled = false;
-            await setData(`pvbstock/${channel.id}`, gcData);
+            await setData(`pvbstock/discord/${channel.id}`, gcData);
             this.stopAutoStock(channel);
             return interaction.reply("❌ PVBR Auto-stock disabled.");
         }
