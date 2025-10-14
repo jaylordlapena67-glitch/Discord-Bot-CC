@@ -1,5 +1,5 @@
 // main.js
-const { Client, GatewayIntentBits, Collection, Colors } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, Colors, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const gradient = require('gradient-string');
 const chalk = require('chalk');
 const fs = require('fs');
@@ -112,8 +112,21 @@ client.once('ready', async () => {
     try {
         const stockChannel = await client.channels.fetch('1426904690343284847'); // your channel ID
         if (stockChannel && stockChannel.isTextBased()) {
-            stockChannel.send({
-                content: `📢 **Choose your stock alert role:**\nReact with the role you want to get notifications for!`
+            const row = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('secret_role')
+                        .setLabel('SECRET')
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId('godly_role')
+                        .setLabel('GODLY')
+                        .setStyle(ButtonStyle.Success)
+                );
+
+            await stockChannel.send({
+                content: `📢 **Choose your stock alert role:**\nClick the button for the role you want to get notifications for!`,
+                components: [row]
             });
         }
     } catch (err) {
@@ -181,6 +194,19 @@ client.on('messageCreate', async (message) => {
 
 // --- Slash commands handling ---
 client.on('interactionCreate', async (interaction) => {
+    if (interaction.isButton()) {
+        const member = interaction.member;
+        if (interaction.customId === 'secret_role') {
+            await member.roles.add('SECRET_ROLE_ID'); // Palitan ng real role ID
+            await interaction.reply({ content: '✅ You have been given the SECRET role!', ephemeral: true });
+        }
+        if (interaction.customId === 'godly_role') {
+            await member.roles.add('GODLY_ROLE_ID'); // Palitan ng real role ID
+            await interaction.reply({ content: '✅ You have been given the GODLY role!', ephemeral: true });
+        }
+        return;
+    }
+
     if (!interaction.isCommand()) return;
     const command = client.slashCommands.get(interaction.commandName);
     if (command) {
