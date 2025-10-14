@@ -1,5 +1,5 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const config = require('../../../config.js'); // adjust if needed
+const config = require('../../config.js'); // adjust if needed
 
 module.exports = {
   config: {
