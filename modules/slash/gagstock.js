@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, PermissionsBitField } = require("discord.js");
 const axios = require("axios");
-const { getData, setData } = require("../../../database.js");
+const { getData, setData } = require("../../database.js");
 
 module.exports = {
     data: new SlashCommandBuilder()
