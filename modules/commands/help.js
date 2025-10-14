@@ -18,11 +18,11 @@ module.exports = {
 		const commandFiles = fs.readdirSync(commandsDir).filter(file => file.endsWith('.js'));
 
 		// Read the prefix directly from config.json
-		let prefix = '!';
+		let prefix = '-';
 		try {
 			const configData = fs.readFileSync('./config.json', 'utf8');
 			const config = JSON.parse(configData);
-			prefix = config.prefix || '!';
+			prefix = config.prefix || '-';
 		} catch (err) {
 			console.error('Error reading config.json:', err);
 		}
@@ -47,7 +47,7 @@ module.exports = {
 			});
 		}
 
-		const pageSize = 5;
+		const pageSize = 10;
 		const totalPages = Math.ceil(visibleCommands.length / pageSize);
 		let currentPage = 0;
 
