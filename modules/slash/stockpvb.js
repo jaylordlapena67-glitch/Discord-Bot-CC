@@ -107,15 +107,16 @@ module.exports = {
             )
             .setColor("Green");
 
-        // --- Ping only if godly or secret items exist ---
-        const specialItems = stock.filter(i => {
+        // --- Ping only if godly or secret seeds exist ---
+        const specialSeeds = seeds.filter(i => {
             const rarity = this.getRarity(i.name);
-            return rarity === "godly" || rarity === "secret";
+            const qty = i.currentStock ?? 0;
+            return (rarity === "godly" || rarity === "secret") && qty > 0;
         });
 
         let ping = "";
-        if (specialItems.length > 0) {
-            const pvbrRoleIds = ['1427517229129404477','1427517104780869713'];
+        if (specialSeeds.length > 0) {
+            const pvbrRoleIds = ['1427517229129404477','1427517104780869713']; // secret + godly roles
             ping = pvbrRoleIds.map(id => `<@&${id}>`).join(' ');
         }
 
@@ -214,7 +215,7 @@ module.exports = {
             if (gcData.enabled && gcData.channelId) {
                 const guild = client.guilds.cache.get(guildId);
                 if (!guild) continue;
-                const channel = guild.channels.cache.get(gcData.channelId);
+const channel = guild.channels.cache.get(gcData.channelId);
                 if (channel) this.startAutoStock(channel);
             }
         }
