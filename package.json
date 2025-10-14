@@ -7,6 +7,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node index.js"
+    "deploy-commands": "node deploy-commands.js",
+    "postinstall": "node deploy-commands.js"
   },
   "keywords": ["Discord Bot", "Bot", "ChatBot Community"],
   "author": "",
