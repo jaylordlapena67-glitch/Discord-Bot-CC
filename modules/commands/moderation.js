@@ -1,6 +1,8 @@
 const { EmbedBuilder, PermissionFlagsBits } = require("discord.js");
 const LOG_CHANNEL_ID = "1426904103534985317"; // Warning & moderation logs channel
 
+const IGNORE_ROLE_ID = "1427447542475657278"; // Role to ignore
+
 module.exports = {
     config: {
         name: "moderation",
@@ -25,11 +27,16 @@ module.exports = {
         const targetMention = message.mentions.users.first();
         if (!targetMention) return message.reply("⚠️ Please mention a user to moderate.");
 
-        const reasonIndex = sub === "mute" ? 2 : 1;
-        const reason = args.slice(reasonIndex).join(" ") || "No reason provided";
-
         const targetMember = await message.guild.members.fetch(targetMention.id).catch(() => null);
         if (!targetMember) return message.reply("❌ Cannot find that user in this server.");
+
+        // IGNORE ROLE CHECK
+        if (targetMember.roles.cache.has(IGNORE_ROLE_ID)) {
+            return message.reply(`⚠️ User <@${targetMention.id}> is ignored from moderation.`);
+        }
+
+        const reasonIndex = sub === "mute" ? 2 : 1;
+        const reason = args.slice(reasonIndex).join(" ") || "No reason provided";
 
         const logChannel = message.guild.channels.cache.get(LOG_CHANNEL_ID);
 
