@@ -1,9 +1,0 @@
-{
-  "botname": "Name of bot"
-,
-  "prefix": "-",
-"token": "token here",
- "client_id": "client id",
-  "test_guild_id": "",
-  "autorestart": 40
-}
