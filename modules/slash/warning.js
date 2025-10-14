@@ -1,4 +1,4 @@
-const { PermissionsBitField } = require("discord.js");
+const { SlashCommandBuilder, PermissionsBitField } = require("discord.js");
 const { setData, getData } = require("../../database.js");
 
 const LOG_CHANNEL_ID = "1426904103534985317"; // Warning & mute logs channel
@@ -42,6 +42,13 @@ async function addWarning(guildId, userId, type, note, channel) {
   warnings.reasons.push({ type, note, time: Date.now() });
   await setData(dataPath, warnings);
 
+  // Update _all list
+  let allUsers = (await getData(`warnings/${guildId}/_all`)) || [];
+  if (!allUsers.includes(userId)) {
+    allUsers.push(userId);
+    await setData(`warnings/${guildId}/_all`, allUsers);
+  }
+
   const logChannel = channel.guild.channels.cache.get(LOG_CHANNEL_ID);
   const msg = `⚠️ <@${userId}> has been warned for **${type}**.\nReason: ${note}\nWarnings: ${warnings.count}/5`;
 
@@ -56,11 +63,10 @@ async function addWarning(guildId, userId, type, note, channel) {
     const muteDuration = MUTE_TIMES[warnings.count - 1];
     if (muteDuration) {
       await member.timeout(muteDuration, `Warning ${warnings.count}: ${note}`);
-      const muteMsg = `🔇 <@${userId}> muted for ${muteDuration/60000} minutes (Warning ${warnings.count})`;
+      const muteMsg = `🔇 <@${userId}> muted for ${muteDuration / 60000} minutes (Warning ${warnings.count})`;
       await channel.send({ content: muteMsg });
       if (logChannel) await logChannel.send({ content: `📌 [LOG] ${muteMsg}` });
 
-      // Log unmute
       setTimeout(async () => {
         const unmuteMsg = `🔊 <@${userId}> has been automatically unmuted (Warning ${warnings.count})`;
         if (channel) await channel.send({ content: unmuteMsg });
@@ -79,76 +85,84 @@ async function addWarning(guildId, userId, type, note, channel) {
 }
 
 module.exports = {
-  name: "warn",
-  description: "Automatically warns, mutes, and logs users for bad behavior",
+  data: new SlashCommandBuilder()
+    .setName("warn")
+    .setDescription("Warn users or view/reset warnings")
+    .addSubcommand(sub => 
+      sub.setName("user")
+        .setDescription("Warn a user manually")
+        .addUserOption(opt => opt.setName("target").setDescription("User to warn").setRequired(true))
+        .addStringOption(opt => opt.setName("reason").setDescription("Reason for warning").setRequired(true))
+    )
+    .addSubcommand(sub => sub.setName("list").setDescription("List all warnings in this server")))
+    .addSubcommand(sub => 
+      sub.setName("reset")
+        .setDescription("Reset warnings for a user or all")
+        .addUserOption(opt => opt.setName("target").setDescription("User to reset warnings for"))
+        .addBooleanOption(opt => opt.setName("all").setDescription("Reset all warnings")))
+  ,
   
-  // Auto-detect messages
-  handleEvent: async function({ message }) {
-    if (!message || !message.guild) return;
-    if (message.author.id === message.client.user.id) return;
+  async execute(interaction) {
+    const guildId = interaction.guild.id;
+    const channel = interaction.channel;
 
-    const guildId = message.guild.id;
-    const userId = message.author.id;
-    const words = message.content.toLowerCase().replace(/[^\w\s]/g, "").split(/\s+/).filter(Boolean);
-    const violations = [];
-
-    if (BADWORDS.some(w => words.includes(w))) violations.push({ type: "Bad Language", note: pickRandom(MESSAGES.badword) });
-    if (RACIST_WORDS.some(w => words.includes(w))) violations.push({ type: "Racist/Discriminatory Term", note: pickRandom(MESSAGES.racist) });
-
-    for (const v of violations) {
-      await addWarning(guildId, userId, v.type, v.note, message.channel);
+    if (interaction.options.getSubcommand() === "user") {
+      const target = interaction.options.getUser("target");
+      const reason = interaction.options.getString("reason");
+      await addWarning(guildId, target.id, "Manual Warning", reason, channel);
+      return interaction.reply({ content: `✅ <@${target.id}> has been warned.`, ephemeral: true });
     }
-  },
 
-  // Manual command
-  run: async function({ message, args }) {
-    if (!message.guild) return;
-    const guildId = message.guild.id;
-    const channel = message.channel;
-
-    if (!args.length) return channel.send("Usage: /warn @user <reason> | /warn list | /warn reset @user | /warn reset all");
-
-    const sub = args[0].toLowerCase();
-
-    // List warnings
-    if (sub === "list") {
+    if (interaction.options.getSubcommand() === "list") {
       const all = (await getData(`warnings/${guildId}/_all`)) || [];
-      if (!all.length) return channel.send("✅ No warnings in this server.");
+      if (!all.length) return interaction.reply("✅ No warnings in this server.");
 
       let msg = "📋 Users with warnings:\n";
       for (const uid of all) {
         const data = (await getData(`warnings/${guildId}/${uid}`)) || { count: 0 };
         if (data.count > 0) msg += `• <@${uid}>: ${data.count} warning${data.count>1?"s":""}\n`;
       }
-      return channel.send(msg);
+      return interaction.reply(msg);
     }
 
-    // Reset all warnings
-    if (sub === "reset" && args[1] === "all") {
-      const all = (await getData(`warnings/${guildId}/_all`)) || [];
-      for (const uid of all) await setData(`warnings/${guildId}/${uid}`, { count: 0, reasons: [] });
-      await setData(`warnings/${guildId}/_all`, []);
-      return channel.send("✅ All warnings have been reset.");
-    }
+    if (interaction.options.getSubcommand() === "reset") {
+      const allOpt = interaction.options.getBoolean("all");
+      const target = interaction.options.getUser("target");
 
-    // Reset specific user
-    if (sub === "reset" && message.mentions.users.size > 0) {
-      const targetId = message.mentions.users.first().id;
-      await setData(`warnings/${guildId}/${targetId}`, { count: 0, reasons: [] });
-      const all = (await getData(`warnings/${guildId}/_all`)) || [];
-      const idx = all.indexOf(targetId);
-      if (idx !== -1) { all.splice(idx,1); await setData(`warnings/${guildId}/_all`, all); }
-      return channel.send(`✅ Warnings reset for <@${targetId}>`);
-    }
+      if (allOpt) {
+        const all = (await getData(`warnings/${guildId}/_all`)) || [];
+        for (const uid of all) await setData(`warnings/${guildId}/${uid}`, { count: 0, reasons: [] });
+        await setData(`warnings/${guildId}/_all`, []);
+        return interaction.reply("✅ All warnings have been reset.");
+      }
 
-    // Manual warn
-    if (message.mentions.users.size > 0) {
-      const targetId = message.mentions.users.first().id;
-      const reason = args.slice(1).join(" ").trim();
-      if (!reason) return channel.send("⚠️ Please include a reason: /warn @user <reason>");
-      return addWarning(guildId, targetId, "Manual Warning", reason, channel);
-    }
+      if (target) {
+        await setData(`warnings/${guildId}/${target.id}`, { count: 0, reasons: [] });
+        const all = (await getData(`warnings/${guildId}/_all`)) || [];
+        const idx = all.indexOf(target.id);
+        if (idx !== -1) { all.splice(idx, 1); await setData(`warnings/${guildId}/_all`, all); }
+        return interaction.reply(`✅ Warnings reset for <@${target.id}>`);
+      }
 
-    return channel.send("Usage: /warn @user <reason> | /warn list | /warn reset @user | /warn reset all");
+      return interaction.reply("⚠️ Please specify a user or select 'all' to reset warnings.");
+    }
+  },
+
+  // Background auto-detection
+  handleEvent: async function({ message }) {
+    if (!message || !message.guild) return;
+    if (message.author.id === message.client.user.id) return;
+
+    const guildId = message.guild.id;  
+    const userId = message.author.id;  
+    const words = message.content.toLowerCase().replace(/[^\w\s]/g, "").split(/\s+/).filter(Boolean);  
+    const violations = [];  
+
+    if (BADWORDS.some(w => words.includes(w))) violations.push({ type: "Bad Language", note: pickRandom(MESSAGES.badword) });  
+    if (RACIST_WORDS.some(w => words.includes(w))) violations.push({ type: "Racist/Discriminatory Term", note: pickRandom(MESSAGES.racist) });  
+
+    for (const v of violations) {  
+      await addWarning(guildId, userId, v.type, v.note, message.channel);  
+    }
   }
 };
