@@ -1,10 +1,9 @@
 const { EmbedBuilder } = require("discord.js");
 const { setData, getData } = require("../../database.js");
 
-const LOG_CHANNEL_ID = "1426904103534985317"; // Warning & mute logs channel
+const LOG_CHANNEL_ID = "1426904103534985317"; // Admin log channel
 const MUTE_TIMES = [10*60*1000, 30*60*1000, 60*60*1000, 12*60*60*1000, 24*60*60*1000]; // 10m,30m,1h,12h,24h
-
-const IGNORE_ROLE_ID = "1427447542475657278"; // role to ignore
+const IGNORE_ROLE_ID = "1427447542475657278"; // Role to ignore
 
 const BADWORDS = [
   "tanga","bobo","gago","puta","pakyu","inutil","ulol",
@@ -40,6 +39,7 @@ function pickRandom(arr) {
 async function addWarning(guildId, userId, type, note, channel) {
   const dataPath = `warnings/${guildId}/${userId}`;
   let warnings = (await getData(dataPath)) || { count: 0, reasons: [] };
+
   warnings.count = (warnings.count || 0) + 1;
   warnings.reasons.push({ type, note, time: Date.now() });
   await setData(dataPath, warnings);
@@ -136,12 +136,11 @@ module.exports = {
       return message.reply("⚠️ Specify a user or 'all' to reset warnings.");
     }
 
-    // Manual warn: warning @user reason
+    // Manual warn
     const target = message.mentions.users.first();
     if (!target) return message.reply("⚠️ Please mention a user to warn.");
     const reason = args.slice(1).join(" ") || "No reason provided";
 
-    // Ignore if user has ignored role
     const member = await message.guild.members.fetch(target.id).catch(() => null);
     if (member?.roles.cache.has(IGNORE_ROLE_ID)) return message.reply(`⚠️ User <@${target.id}> is ignored from warnings.`);
 
@@ -155,9 +154,9 @@ module.exports = {
     const member = await message.guild.members.fetch(message.author.id).catch(() => null);
     if (!member) return;
 
-    // Ignore staff/admins
+    // Ignore admin/staff/ignored role
     const adminRoles = ["Admin", "Moderator", "Staff"];
-    if (member.roles.cache.some(r => adminRoles.includes(r.name))) return;
+    if (member.roles.cache.some(r => adminRoles.includes(r.name)) || member.roles.cache.has(IGNORE_ROLE_ID)) return;
 
     const content = message.content.toLowerCase();
     const violations = [];
