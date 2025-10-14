@@ -1,11 +1,11 @@
-const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
+const { SlashCommandBuilder, EmbedBuilder, PermissionsBitField } = require("discord.js");
 const axios = require("axios");
 const { setData, getData } = require("../../../database.js");
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName("pvbstock")
-        .setDescription("Plants vs Brainrots auto-stock every restock time + rare alerts")
+        .setDescription("Plants vs Brainrots auto-stock every restock time + rare alerts (Admin only)")
         .addStringOption(option =>
             option.setName("action")
                 .setDescription("Choose on, off, or check")
@@ -149,6 +149,10 @@ module.exports = {
     },
 
     async execute(interaction) {
+        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return interaction.reply({ content: "🚫 Only **Admins** can use this command.", ephemeral: true });
+        }
+
         const action = interaction.options.getString("action");
         const channel = interaction.channel;
         if(!channel) return interaction.reply("❌ Cannot detect channel!");
@@ -201,4 +205,20 @@ module.exports = {
             await interaction.reply({ embeds: [embed] });
         }
     },
+
+    // 🔁 Auto resume on restart
+    async onReady(client) {
+        const allData = await getData("pvbstock/discord") || {};
+        for (const [guildId, gcData] of Object.entries(allData)) {
+            if (gcData.enabled && gcData.channelId) {
+                const guild = client.guilds.cache.get(guildId);
+                if (!guild) continue;
+                const channel = guild.channels.cache.get(gcData.channelId);
+                if (channel) {
+                    this.startAutoStock(channel);
+                    console.log(`[AutoResume] PVBR stock resumed for guild ${guild.name}`);
+                }
+            }
+        }
+    }
 };
