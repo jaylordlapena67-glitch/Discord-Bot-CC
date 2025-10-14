@@ -163,10 +163,10 @@ module.exports = {
             allData[guildId] = gcData;
             await setData("gagstock/discord", allData);
 
-            await this.sendStock(channel);
+            // ✅ Do NOT send immediately, wait for aligned time
             this.startAutoStock(channel);
 
-            return interaction.reply("✅ GAG Auto-stock **enabled**! Updates every aligned restock time.");
+            return interaction.reply("✅ GAG Auto-stock **enabled**! It will post at the next aligned restock time.");
         }
 
         else if (action === "off") {
