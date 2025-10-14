@@ -1,14 +1,12 @@
-// index.js
-const { Client, GatewayIntentBits, Collection, Colors, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const gradient = require('gradient-string');
+const { Client, GatewayIntentBits, Collection, Colors, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionsBitField } = require('discord.js');
 const chalk = require('chalk');
+const gradient = require('gradient-string');
 const config = require('./config.js');
 const { loadCommands, loadSlashCommands } = require('./utils/commandLoader');
 const loadEvents = require('./utils/eventLoader');
-const { logDiscordMessage, logCommandExecution } = require('./utils/logger');
 const { getData, setData } = require('./database.js');
+const { logDiscordMessage, logCommandExecution } = require('./utils/logger');
 
-// --- Discord client setup ---
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -46,37 +44,16 @@ global.cc = {
 
 // --- On Ready ---
 client.once('ready', async () => {
-    console.log(boldText(gradientText("━━━━━━━━━━[ BOT DEPLOYMENT STARTED ]━━━━━━━━━━━━", 'lime')));
     console.log(boldText(gradientText(`Logged in as ${client.user.tag}`, 'lime')));
 
     loadCommands(client);
     await loadSlashCommands(client);
     loadEvents(client);
 
-    console.log(boldText(gradientText("[ DEPLOY COMPLETE ]", 'lime')));
-
-    // --- Register global slash commands ---
+    // --- Initialize role selection messages ---
     try {
-        console.log(gradientText("\n🧹 Clearing old global slash commands...", 'cyan'));
-        await client.application.commands.set([]);
-
-        const commands = client.slashCommands.map(command => ({
-            name: command.data.name,
-            description: command.data.description,
-            options: command.data.options || [],
-        }));
-
-        console.log(gradientText(`🚀 Registering ${commands.length} global commands...`, 'lime'));
-        await client.application.commands.set(commands);
-        console.log(boldText(gradientText("\n✅ Global slash commands registered successfully!", 'lime')));
-    } catch (error) {
-        console.error(boldText(gradientText(`❌ Failed to register global commands: ${error.message}`, 'red')));
-    }
-
-    // --- Send role selection messages ---
-    try {
-        const pvbChannelId = '1426904690343284847'; // PVBR role picker
-        const gagChannelId = '1426904612861902868'; // GAG role picker
+        const pvbChannelId = '1426904690343284847';
+        const gagChannelId = '1426904612861902868';
         const allGuildData = await getData('pvb_roles') || {};
 
         for (const guild of client.guilds.cache.values()) {
@@ -125,67 +102,62 @@ client.once('ready', async () => {
     console.log(boldText(gradientText("━━━━━━━━━━[ READY FOR USE ✅ ]━━━━━━━━━━━━", 'lime')));
 });
 
-// --- Button interaction handler (fixed) ---
+// --- Button interaction handler ---
 client.on('interactionCreate', async interaction => {
     if (!interaction.isButton()) return;
 
+    const roleMap = {
+        // PVBR
+        secret_role: '1427517229129404477',
+        godly_role: '1427517104780869713',
+        // GAG
+        grand_master: '1427560078411563059',
+        great_pumpkin: '1427560648673595402',
+        levelup_lollipop: '1427560940068536320'
+    };
+
+    const roleId = roleMap[interaction.customId];
+    if (!roleId) return;
+
     try {
+        // fetch fresh member object
         const member = await interaction.guild.members.fetch(interaction.user.id);
 
-        const rolesToToggle = [];
-
-        // PVBR roles
-        if (interaction.customId === 'secret_role') rolesToToggle.push('1427517229129404477');
-        if (interaction.customId === 'godly_role') rolesToToggle.push('1427517104780869713');
-
-        // GAG roles
-        if (interaction.customId === 'grand_master') rolesToToggle.push('1427560078411563059');
-        if (interaction.customId === 'great_pumpkin') rolesToToggle.push('1427560648673595402');
-        if (interaction.customId === 'levelup_lollipop') rolesToToggle.push('1427560940068536320');
-
-        let updatedRoles = [];
-        for (const roleId of rolesToToggle) {
-            const role = interaction.guild.roles.cache.get(roleId);
-            if (!role) continue;
-
-            // Check bot hierarchy
-            const botMember = await interaction.guild.members.fetch(client.user.id);
-            if (role.position >= botMember.roles.highest.position) {
-                console.warn(`Cannot assign/remove role ${role.name}, bot role too low.`);
-                continue;
-            }
-
-            if (member.roles.cache.has(roleId)) {
-                await member.roles.remove(role).catch(err => console.error(`Failed to remove role ${role.name}:`, err));
-                updatedRoles.push(`Removed ${role.name}`);
-            } else {
-                await member.roles.add(role).catch(err => console.error(`Failed to add role ${role.name}:`, err));
-                updatedRoles.push(`Added ${role.name}`);
-            }
-        }
-
-        if (updatedRoles.length === 0) {
-            await interaction.reply({ content: '❌ No roles were updated. Check bot permissions and role hierarchy.', ephemeral: true });
+        let action = '';
+        if (member.roles.cache.has(roleId)) {
+            await member.roles.remove(roleId);
+            action = 'removed';
         } else {
-            await interaction.reply({ content: `✅ Updated roles:\n${updatedRoles.join('\n')}`, ephemeral: true });
+            await member.roles.add(roleId);
+            action = 'added';
         }
+
+        await interaction.reply({
+            content: `✅ Role <@&${roleId}> successfully ${action}!`,
+            ephemeral: true
+        });
 
     } catch (err) {
-        console.error('❌ Error handling button interaction:', err);
-        await interaction.reply({ content: '❌ Failed to update roles.', ephemeral: true });
+        console.error('❌ Error updating roles:', err);
+        await interaction.reply({
+            content: '❌ Failed to update roles. Check bot permissions and role hierarchy.',
+            ephemeral: true
+        });
     }
 });
 
 // --- Slash command handler ---
 client.on('interactionCreate', async interaction => {
     if (!interaction.isCommand()) return;
+
     const command = client.slashCommands.get(interaction.commandName);
-    if (command) {
-        try { await command.execute(interaction); } 
-        catch (error) { 
-            console.error(`❌ Error executing slash command [${interaction.commandName}]:`, error); 
-            await interaction.reply({ content: `❌ | ${error.message}`, ephemeral: true }); 
-        }
+    if (!command) return;
+
+    try {
+        await command.execute(interaction);
+    } catch (error) {
+        console.error(`❌ Error executing slash command [${interaction.commandName}]:`, error);
+        await interaction.reply({ content: `❌ | ${error.message}`, ephemeral: true });
     }
 });
 
@@ -243,10 +215,3 @@ process.on('unhandledRejection', (reason) => { console.error('Unhandled Promise 
 
 // --- Start bot ---
 client.login(config.token);
-
-// --- Render health check ---
-const express = require('express');
-const app = express();
-const PORT = process.env.PORT || 3000;
-app.get('/', (req, res) => res.send('Bot is running!'));
-app.listen(PORT, () => console.log(`Web server listening on port ${PORT}`));
