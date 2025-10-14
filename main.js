@@ -53,7 +53,6 @@ global.cc = {
 client.once('ready', async () => {
     console.log(boldText(gradientText("━━━━━━━━━━[ BOT DEPLOYMENT STARTED ]━━━━━━━━━━━━", 'lime')));
     console.log(boldText(gradientText(`Logged in as ${client.user.tag}`, 'lime')));
-    console.log(boldText(gradientText("━━━━━━━━━━[ LOADING COMMANDS & EVENTS ]━━━━━━━━━━━━", 'cyan')));
 
     // Load commands, slash commands, events
     loadCommands(client);
@@ -87,15 +86,13 @@ client.once('ready', async () => {
 
     // --- Send role selection buttons ONLY ONCE per guild ---
     try {
+        const stockChannelId = '1426904690343284847'; // fixed channel
         const allGuildData = await getData('pvb_roles') || {};
-        for (const guildId of client.guilds.cache.keys()) {
-            const guild = await client.guilds.fetch(guildId);
-            const existingData = allGuildData[guildId];
-
+        for (const guild of client.guilds.cache.values()) {
+            const existingData = allGuildData[guild.id];
             if (!existingData || !existingData.messageId) {
-                // Channel to send the buttons
-                const channel = guild.channels.cache.find(ch => ch.isTextBased() && ch.permissionsFor(guild.members.me).has('SendMessages'));
-                if (!channel) continue;
+                const channel = guild.channels.cache.get(stockChannelId);
+                if (!channel || !channel.isTextBased()) continue;
 
                 const row = new ActionRowBuilder()
                     .addComponents(
@@ -114,14 +111,14 @@ client.once('ready', async () => {
                     components: [row]
                 });
 
-                allGuildData[guildId] = { messageId: msg.id, channelId: channel.id };
+                allGuildData[guild.id] = { messageId: msg.id, channelId: channel.id };
             }
         }
 
         await setData('pvb_roles', allGuildData);
-        console.log('✅ Role selection messages initialized.');
+        console.log('✅ Role selection message initialized.');
     } catch (err) {
-        console.error('❌ Failed to send role selection messages:', err);
+        console.error('❌ Failed to send role selection message:', err);
     }
 
     // --- Resume PVBR Auto-stock after restart ---
@@ -150,16 +147,16 @@ client.once('ready', async () => {
     console.log(boldText(gradientText("━━━━━━━━━━[ READY FOR USE ✅ ]━━━━━━━━━━━━", 'lime')));
 });
 
-// --- Button and slash interaction handler ---
+// --- Button interaction handler ---
 client.on('interactionCreate', async interaction => {
     if (interaction.isButton()) {
         const member = interaction.member;
-        const allRoles = [];
-        if (interaction.customId === 'secret_role') allRoles.push('SECRET_ROLE_ID'); // real role ID
-        if (interaction.customId === 'godly_role') allRoles.push('GODLY_ROLE_ID'); // real role ID
+        const rolesToAdd = [];
+        if (interaction.customId === 'secret_role') rolesToAdd.push('1427517229129404477'); // Secret
+        if (interaction.customId === 'godly_role') rolesToAdd.push('1427517104780869713'); // Godly
 
         try {
-            for (const roleId of allRoles) {
+            for (const roleId of rolesToAdd) {
                 if (!member.roles.cache.has(roleId)) await member.roles.add(roleId);
             }
             await interaction.reply({ content: `✅ You have been given your selected role(s)!`, ephemeral: true });
@@ -182,7 +179,7 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-// --- Message handling (prefix commands) ---
+// --- Prefix command handler ---
 client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
 
@@ -227,7 +224,7 @@ client.on('messageCreate', async message => {
 
         try {
             await command.letStart({ args, message, discord: { client } });
-        } catch (error) {
+} catch (error) {
             console.error(`❌ Error executing command: ${error.message}`);
             message.reply(`❌ | ${error.message}`);
         }
