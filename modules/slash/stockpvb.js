@@ -5,7 +5,7 @@ const { setData, getData } = require("../../../database.js");
 module.exports = {
     data: new SlashCommandBuilder()
         .setName("pvbstock")
-        .setDescription("PVBR auto-stock every 1,6,11... +20s delay with rare seed alerts")
+        .setDescription("Plants vs Brainrots auto-stock every restock time + rare alerts")
         .addStringOption(option =>
             option.setName("action")
                 .setDescription("Choose on, off, or check")
@@ -125,7 +125,8 @@ module.exports = {
         if(this.autoStockTimers[guildId]) clearTimeout(this.autoStockTimers[guildId]);
 
         this.autoStockTimers[guildId] = setTimeout(async () => {
-            const gcData = await getData(`pvbstock/discord/${guildId}`);
+            const allData = await getData("pvbstock/discord") || {};
+            const gcData = allData[guildId];
             if(!gcData?.enabled) return this.stopAutoStock(channel, guildId);
 
             await this.sendStock(channel);
@@ -152,11 +153,6 @@ module.exports = {
         const channel = interaction.channel;
         if(!channel) return interaction.reply("❌ Cannot detect channel!");
 
-        const member = interaction.member;
-        if(!member.roles.cache.some(r => r.name === "ADMIN")) {
-            return interaction.reply("❌ You must have the `ADMIN` role to use this command.");
-        }
-
         const guildId = interaction.guild.id;
         const allData = await getData("pvbstock/discord") || {};
         const gcData = allData[guildId] || { enabled: false, channelId: null };
@@ -167,7 +163,7 @@ module.exports = {
             }
 
             gcData.enabled = true;
-            gcData.channelId = channel.id; // store the channel to resume after restart
+            gcData.channelId = channel.id;
             allData[guildId] = gcData;
             await setData("pvbstock/discord", allData);
 
