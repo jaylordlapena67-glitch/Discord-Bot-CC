@@ -1,46 +1,37 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const fs = require('fs');
-const path = require('path');
+const config = require('../../../config.js'); // Adjust path if needed
 
 module.exports = {
 	config: {
 		name: 'prefix',
-		description: 'Displays the current command prefix.',
+		description: 'Displays the current command prefix and gives quick buttons for Help and About.',
 	},
 
 	events: ({ discord }) => {
 		const client = discord.client;
-
-		const configPath = './config.json';
-		let prefix = '!';
-
-		try {
-			const configData = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-			prefix = configData.prefix || '!';
-		} catch (error) {
-			console.error('Error reading config.json:', error);
-		}
+		const prefix = config.prefix || '!';
 
 		client.on('messageCreate', (message) => {
 			if (message.author.bot || !message.guild) return;
 
 			const content = message.content.trim().toLowerCase();
 
-			if (content === `prefix`) {
+			// Accept both "prefix" and "@bot prefix"
+			if (content === 'prefix' || content === `${prefix}prefix`) {
 				const embed = new EmbedBuilder()
-					.setColor('#0099FF')
-					.setTitle('Current Prefix')
-					.setDescription(`The current prefix for commands is \`${prefix}\`.`)
-					.setFooter({ text: 'Use this prefix to run other commands.' });
+					.setColor('#00BFFF')
+					.setTitle('⚙️ Current Bot Prefix')
+					.setDescription(`> My current prefix is: **\`${prefix}\`**`)
+					.setFooter({ text: 'Use this prefix to run my commands.' });
 
 				const helpButton = new ButtonBuilder()
-					.setCustomId('help')
-					.setLabel('Help')
+					.setCustomId('help_button')
+					.setLabel('📘 Help')
 					.setStyle(ButtonStyle.Primary);
 
 				const aboutButton = new ButtonBuilder()
-					.setCustomId('about')
-					.setLabel('About')
+					.setCustomId('about_button')
+					.setLabel('ℹ️ About')
 					.setStyle(ButtonStyle.Secondary);
 
 				const row = new ActionRowBuilder().addComponents(helpButton, aboutButton);
@@ -52,27 +43,30 @@ module.exports = {
 		client.on('interactionCreate', async (interaction) => {
 			if (!interaction.isButton()) return;
 
-			const prefix = '!'; // Get the prefix
-
-			if (interaction.customId === 'help') {
-				const helpMessage = `${prefix}help`;
-				await interaction.reply({ content: `Triggered the command: ${helpMessage}`, ephemeral: true });
+			if (interaction.customId === 'help_button') {
+				await interaction.reply({ content: `📘 You selected **Help** — running \`${prefix}help\`...`, ephemeral: true });
 
 				const helpCommand = client.commands.get('help');
-				if (helpCommand && helpCommand.letStart) {
-					await helpCommand.letStart(interaction);
-				} else if (helpCommand) {
-					await helpCommand.execute(interaction);
+				if (helpCommand) {
+					try {
+						if (helpCommand.letStart) await helpCommand.letStart({ message: interaction, args: [] });
+						else if (helpCommand.execute) await helpCommand.execute(interaction);
+					} catch (err) {
+						console.error('Help button error:', err);
+					}
 				}
-			} else if (interaction.customId === 'about') {
-				const aboutMessage = `${prefix}about`;
-				await interaction.reply({ content: `Wait...: ${aboutMessage}`, ephemeral: true });
+
+			} else if (interaction.customId === 'about_button') {
+				await interaction.reply({ content: `ℹ️ You selected **About** — running \`${prefix}about\`...`, ephemeral: true });
 
 				const aboutCommand = client.commands.get('about');
-				if (aboutCommand && aboutCommand.letStart) {
-					await aboutCommand.letStart(interaction);
-				} else if (aboutCommand) {
-					await aboutCommand.execute(interaction);
+				if (aboutCommand) {
+					try {
+						if (aboutCommand.letStart) await aboutCommand.letStart({ message: interaction, args: [] });
+						else if (aboutCommand.execute) await aboutCommand.execute(interaction);
+					} catch (err) {
+						console.error('About button error:', err);
+					}
 				}
 			}
 		});
