@@ -51,7 +51,7 @@ const PANEL_MARKER = '🎭 **Choose a role below:**';
 // === BUTTON BUILDER (all green) ===
 function buildButtonsForChannel(channelId) {
   const row = new ActionRowBuilder();
-  const BUTTON_STYLE = ButtonStyle.Success; // green for all
+  const BUTTON_STYLE = ButtonStyle.Success;
 
   if (channelId === PVB_CHANNEL_ID) {
     row.addComponents(
@@ -65,7 +65,6 @@ function buildButtonsForChannel(channelId) {
       new ButtonBuilder().setCustomId('levelup_lollipop').setLabel('Levelup Lollipop').setStyle(BUTTON_STYLE)
     );
   }
-
   return row;
 }
 
@@ -115,6 +114,13 @@ client.once('ready', async () => {
   for (const guild of client.guilds.cache.values()) {
     await xpModule.autoAssignAllMembers(guild);
   }
+
+  // ✅ Resume pvbstock auto feature if enabled before restart
+  const pvbstock = client.commands.get("pvbstock");
+  if (pvbstock?.onReady) {
+    await pvbstock.onReady(client);
+    console.log("🌱 PVBR auto-stock resumed for all guilds with enabled state.");
+  }
 });
 
 // === AUTO RECREATE PANEL IF DELETED ===
@@ -128,7 +134,6 @@ client.on(Events.MessageDelete, async (message) => {
 // === ROLE BUTTON INTERACTION ===
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isButton()) return;
-
   const roleId = roleMap[interaction.customId];
   if (!roleId) return;
 
@@ -166,10 +171,7 @@ client.on(Events.GuildMemberAdd, async (member) => {
     await channel.send({ embeds: [embed] });
   }
 
-  // Apply emoji nickname
   await applyEmojiToNickname(member);
-
-  // Assign Rookie / level 0 role automatically
   await xpModule.assignLevelRole(member, 0);
 });
 
@@ -216,29 +218,26 @@ client.on(Events.MessageCreate, async (message) => {
 
 // === AUTO NICKNAME EMOJI SYSTEM ===
 const ROLE_EMOJIS = {
-  "1427447542475657278": { emoji: "👑", color: Colors.Gold }, // Owner
-  "1427959238705025175": { emoji: "🛡️", color: Colors.Red }, // Admin
-  "1427959010111393854": { emoji: "⚔️", color: Colors.Blue }, // Moderator
-  "1427974807672328254": { emoji: "💼", color: Colors.Purple } // Midman
+  "1427447542475657278": { emoji: "👑", color: Colors.Gold },
+  "1427959238705025175": { emoji: "🛡️", color: Colors.Red },
+  "1427959010111393854": { emoji: "⚔️", color: Colors.Blue },
+  "1427974807672328254": { emoji: "💼", color: Colors.Purple }
 };
 
 async function applyEmojiToNickname(member) {
   if (!member.manageable) return;
   try {
     let foundRole = null;
-
     for (const [roleId, data] of Object.entries(ROLE_EMOJIS)) {
       if (member.roles.cache.has(roleId)) {
         foundRole = data;
         break;
       }
     }
-
     if (!foundRole) return;
 
     const baseName = member.displayName.replace(/[\p{Emoji_Presentation}\p{Emoji}\u200D]+$/u, "").trim();
     const newNickname = `${baseName} ${foundRole.emoji}`;
-
     if (member.displayName !== newNickname) {
       await member.setNickname(newNickname).catch(() => {});
       console.log(`✅ Updated nickname for ${member.user.tag}: ${newNickname}`);
