@@ -86,27 +86,26 @@ module.exports = {
       const data = await this.fetchStocks();
       if (!data) return channel.send("⚠️ Failed to fetch GAG stock.");
 
+      const gearItems = data.gearStock || [];
+      const seedItems = data.seedsStock || [];
+      const eggItems = data.eggStock || [];
+
       const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
       const next = this.getNextAligned();
 
-      const gearItems = data.gearStock || [];
-      const seedItems = [...(data.seedsStock || []), ...(data.eggStock || [])];
-
       const embed = new EmbedBuilder()
         .setTitle("🌱 Grow A Garden Stock Update")
-        .setDescription(
-          `🕒 **Current PH Time:** ${now.toLocaleTimeString("en-PH", { hour12: true })}\n🕒 **Next Restock:** ${next.toLocaleTimeString("en-PH", { hour12: true })}`
-        )
+        .setDescription(`🕒 Current PH Time: ${now.toLocaleTimeString("en-PH", { hour12: true })}\n🕒 Next Restock: ${next.toLocaleTimeString("en-PH", { hour12: true })}`)
         .addFields(
-          { name: "🛠️ Gear Stock", value: this.formatItems(gearItems).slice(0, 1024) || "❌ Empty" },
-          { name: "🥚 Seeds & Eggs", value: this.formatItems(seedItems).slice(0, 1024) || "❌ Empty" }
+          { name: "🥚 Eggs", value: this.formatItems(eggItems).slice(0, 1024) || "❌ Empty" },
+          { name: "🌱 Seeds", value: this.formatItems(seedItems).slice(0, 1024) || "❌ Empty" },
+          { name: "🛠️ Gear", value: this.formatItems(gearItems).slice(0, 1024) || "❌ Empty" }
         )
         .setColor("Green");
 
       // Ping special roles if rare items appear
-      const specials = [...gearItems, ...seedItems].filter(i =>
-        this.SPECIAL_ITEMS.some(s => i.name.toLowerCase().includes(s)) &&
-        (i.quantity ?? 0) > 0
+      const specials = [...gearItems, ...seedItems, ...eggItems].filter(i =>
+        this.SPECIAL_ITEMS.some(s => i.name.toLowerCase().includes(s)) && (i.quantity ?? 0) > 0
       );
 
       let ping = "";
@@ -153,13 +152,14 @@ module.exports = {
     }
   },
 
-  async run({ message, args }) {
+  // ✅ MAIN COMMAND FUNCTION
+  async letStart({ args, message, discord }) {
     const member = message.member;
     if (!member.permissions.has(PermissionsBitField.Flags.Administrator))
       return message.reply("🚫 Only **Admins** can use this command.");
 
     const action = args[0]?.toLowerCase();
-    if (!["on", "off", "check"].includes(action))
+    if (!["on","off","check"].includes(action))
       return message.reply("⚠️ Invalid action! Use `on`, `off`, or `check`.");
 
     const channel = message.channel;
@@ -174,7 +174,7 @@ module.exports = {
       allData[guildId] = gcData;
       await setData("gagstock/discord", allData);
       this.startAutoStock(channel);
-      return message.reply("✅ GAG Auto-stock **enabled**! It will post at the next aligned restock time.");
+      return message.reply("✅ GAG Auto-stock **enabled**! Updates will be sent every restock time.");
     }
 
     if (action === "off") {
@@ -204,6 +204,7 @@ module.exports = {
     }
   },
 
+  // ✅ Auto resume after restart
   async onReady(client) {
     const allData = await getData("gagstock/discord") || {};
     for (const [guildId, gcData] of Object.entries(allData)) {
@@ -211,7 +212,10 @@ module.exports = {
         const guild = client.guilds.cache.get(guildId);
         if (!guild) continue;
         const channel = guild.channels.cache.get(gcData.channelId);
-        if (channel) this.startAutoStock(channel);
+        if (channel) {
+          this.startAutoStock(channel);
+          console.log(`🔁 Auto-stock resumed for guild ${guild.name}`);
+        }
       }
     }
   }
