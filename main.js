@@ -1,118 +1,202 @@
-const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Partials } = require("discord.js");
-const { getData, setData } = require("../../database.js");
-const warnModule = require("../events/autoWarning.js");
-const config = require("../../config.js");
+const {
+    Client,
+    GatewayIntentBits,
+    Collection,
+    Colors,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    EmbedBuilder
+} = require('discord.js');
+const config = require('./config.js');
+const { loadCommands, loadSlashCommands } = require('./utils/commandLoader');
+const loadEvents = require('./utils/eventLoader');
+const { getData, setData } = require('./database.js');
+const warnModule = require('./modules/commands/warning.js');
 
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent
-    ],
-    partials: [Partials.Message, Partials.Channel, Partials.Reaction]
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildMembers
+    ]
 });
 
-// ✅ Role button channel IDs
-const GAG_CHANNEL_ID = "1426904612861902868";
-const PVB_CHANNEL_ID = "1426904690343284847";
+client.commands = new Collection();
+client.slashCommands = new Collection();
 
-// ✅ Function to create role buttons
-async function sendRoleButtons(channel, type) {
-    const embed = new EmbedBuilder()
-        .setTitle(type === "gag" ? "🎮 GAG Role Selector" : "🌽 PVB Role Selector")
-        .setDescription("Click a button below to get your role!")
-        .setColor(type === "gag" ? 0x2ecc71 : 0x3498db);
+const ROLE_CHANNELS = [
+    "1426904612861902868", // GAG
+    "1426904690343284847"  // PVB
+];
 
-    const row = new ActionRowBuilder().addComponents(
+const roleMap = {
+    secret_role: '1427517229129404477',
+    godly_role: '1427517104780869713',
+    grand_master: '1427560078411563059',
+    great_pumpkin: '1427560648673595402',
+    levelup_lollipop: '1427560940068536320'
+};
+
+// === READY EVENT ===
+client.once('ready', async () => {
+    console.log(`✅ Logged in as ${client.user.tag}`);
+    loadCommands(client);
+    await loadSlashCommands(client);
+    loadEvents(client);
+
+    // Ensure role message exists
+    async function ensureRoleMessage(channel) {
+        const messages = await channel.messages.fetch({ limit: 10 }).catch(() => null);
+        const existing = messages?.find(m => m.content.includes("🎭 **Choose a role below:**"));
+        if (!existing) {
+            await channel.send({
+                content: "🎭 **Choose a role below:**",
+                components: [getRoleButtons(null)]
+            });
+            console.log(`✅ Created new role panel in ${channel.name}`);
+        } else {
+            console.log(`✅ Role panel already exists in ${channel.name}`);
+        }
+    }
+
+    for (const channelId of ROLE_CHANNELS) {
+        const channel = await client.channels.fetch(channelId).catch(() => null);
+        if (channel) await ensureRoleMessage(channel);
+    }
+
+    setInterval(async () => {
+        for (const channelId of ROLE_CHANNELS) {
+            const channel = await client.channels.fetch(channelId).catch(() => null);
+            if (channel) await ensureRoleMessage(channel);
+        }
+    }, 5 * 60 * 1000);
+});
+
+// === ROLE BUTTON CREATOR ===
+function getRoleButtons(member) {
+    return new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setCustomId(`${type}_join`)
-            .setLabel(`Join ${type.toUpperCase()}`)
-            .setStyle(ButtonStyle.Success),
+            .setCustomId("secret_role")
+            .setLabel("Secret Role")
+            .setStyle(member?.roles.cache.has(roleMap.secret_role) ? ButtonStyle.Success : ButtonStyle.Secondary),
         new ButtonBuilder()
-            .setCustomId(`${type}_leave`)
-            .setLabel(`Leave ${type.toUpperCase()}`)
-            .setStyle(ButtonStyle.Danger)
+            .setCustomId("godly_role")
+            .setLabel("Godly Role")
+            .setStyle(member?.roles.cache.has(roleMap.godly_role) ? ButtonStyle.Success : ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId("grand_master")
+            .setLabel("Grand Master")
+            .setStyle(member?.roles.cache.has(roleMap.grand_master) ? ButtonStyle.Success : ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId("great_pumpkin")
+            .setLabel("Great Pumpkin")
+            .setStyle(member?.roles.cache.has(roleMap.great_pumpkin) ? ButtonStyle.Success : ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId("levelup_lollipop")
+            .setLabel("Levelup Lollipop")
+            .setStyle(member?.roles.cache.has(roleMap.levelup_lollipop) ? ButtonStyle.Success : ButtonStyle.Secondary)
     );
-
-    await channel.send({ embeds: [embed], components: [row] });
 }
 
-// ✅ Auto check & resend role buttons if missing
-async function ensureRoleButtons() {
-    const gagChannel = await client.channels.fetch(GAG_CHANNEL_ID).catch(() => null);
-    const pvbChannel = await client.channels.fetch(PVB_CHANNEL_ID).catch(() => null);
-    if (!gagChannel || !pvbChannel) return;
+// === MEMBER WELCOME / GOODBYE ===
+const WELCOME_CHANNEL = '1427870606660997192';
+const GOODBYE_CHANNEL = '1427870731508781066';
 
-    const gagMessages = await gagChannel.messages.fetch({ limit: 10 });
-    const pvbMessages = await pvbChannel.messages.fetch({ limit: 10 });
+client.on('guildMemberAdd', async (member) => {
+    const channel = member.guild.channels.cache.get(WELCOME_CHANNEL);
+    if (!channel) return;
 
-    const gagHasButtons = gagMessages.some(m => m.components?.length > 0);
-    const pvbHasButtons = pvbMessages.some(m => m.components?.length > 0);
+    const embed = new EmbedBuilder()
+        .setColor(Colors.Green)
+        .setTitle(`👋 Welcome ${member.user.tag}!`)
+        .setDescription(`Glad to have you here, <@${member.id}>! 🎉`)
+        .addFields({ name: 'Member Count', value: `${member.guild.memberCount}`, inline: true })
+        .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+        .setTimestamp();
 
-    if (!gagHasButtons) await sendRoleButtons(gagChannel, "gag");
-    if (!pvbHasButtons) await sendRoleButtons(pvbChannel, "pvb");
-}
+    channel.send({ embeds: [embed] });
+});
 
-// ✅ Handle role button interactions
-client.on("interactionCreate", async (interaction) => {
+client.on('guildMemberRemove', async (member) => {
+    const channel = member.guild.channels.cache.get(GOODBYE_CHANNEL);
+    if (!channel) return;
+
+    const embed = new EmbedBuilder()
+        .setColor(Colors.Red)
+        .setTitle(`😢 ${member.user.tag} left the server`)
+        .addFields({ name: 'Member Count', value: `${member.guild.memberCount}`, inline: true })
+        .setTimestamp();
+
+    channel.send({ embeds: [embed] });
+});
+
+// === ROLE BUTTON INTERACTION ===
+client.on('interactionCreate', async (interaction) => {
     if (!interaction.isButton()) return;
 
-    const { customId, member } = interaction;
-    const type = customId.includes("gag") ? "gag" : "pvb";
-    const roleName = type.toUpperCase();
-    const role = interaction.guild.roles.cache.find(r => r.name === roleName);
+    const roleId = roleMap[interaction.customId];
+    if (!roleId) return;
 
-    if (!role) return interaction.reply({ content: `⚠️ Role **${roleName}** not found!`, ephemeral: true });
+    try {
+        const member = await interaction.guild.members.fetch(interaction.user.id);
 
-    if (customId.endsWith("join")) {
-        await member.roles.add(role);
-        return interaction.reply({ content: `✅ Added **${roleName}** role!`, ephemeral: true });
-    } else if (customId.endsWith("leave")) {
-        await member.roles.remove(role);
-        return interaction.reply({ content: `❎ Removed **${roleName}** role.`, ephemeral: true });
+        if (member.roles.cache.has(roleId)) {
+            await member.roles.remove(roleId);
+        } else {
+            await member.roles.add(roleId);
+        }
+
+        const updatedButtons = getRoleButtons(member);
+        await interaction.update({ components: [updatedButtons] });
+
+    } catch (err) {
+        console.error('Role update error:', err);
+        await interaction.reply({ content: 'Error updating your role.', ephemeral: true });
     }
 });
 
-// ✅ Member count update every join/leave
-async function updateMemberCount(guild) {
-    const channel = guild.channels.cache.find(c => c.name.toLowerCase().includes("member-count"));
-    if (channel) {
-        await channel.setName(`👥 Members: ${guild.memberCount}`).catch(() => {});
+// === AUTO SYNC BUTTON COLORS ===
+client.on('guildMemberUpdate', async (oldMember, newMember) => {
+    for (const channelId of ROLE_CHANNELS) {
+        const channel = await newMember.guild.channels.fetch(channelId).catch(() => null);
+        if (!channel) continue;
+        const messages = await channel.messages.fetch({ limit: 10 }).catch(() => null);
+        const rolePanel = messages?.find(m => m.content.includes("🎭 **Choose a role below:**"));
+        if (!rolePanel) continue;
+
+        const updatedButtons = getRoleButtons(newMember);
+        await rolePanel.edit({ components: [updatedButtons] }).catch(() => null);
     }
-}
+});
 
-client.on("guildMemberAdd", async member => updateMemberCount(member.guild));
-client.on("guildMemberRemove", async member => updateMemberCount(member.guild));
-
-// ✅ Auto react to "WFL" type messages
-client.on("messageCreate", async (message) => {
+// === MESSAGE HANDLER ===
+client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
 
-    // Detect “win lose”, “win or lose”, “w/f/l”, “wfl”, etc.
+    // ✅ Auto detect "WFL", "win lose", "win or lose", "w/f/l", etc.
     const wflRegex = /\b(?:win\s*or\s*lose|win\s*lose|w[\s\/\.\-]*f[\s\/\.\-]*l)\b/i;
-
     if (wflRegex.test(message.content)) {
         try {
             await message.react('🇼');
             await message.react('🇫');
             await message.react('🇱');
         } catch (err) {
-            console.error('❌ Error reacting to WFL message:', err);
+            console.error('Error reacting WFL:', err);
         }
     }
 
-    // Auto warning (if you have auto-warning module)
+    // Auto warning
     try {
         await warnModule.handleEvent({ message });
     } catch (err) {
         console.error('Auto-detect error:', err);
     }
 
-    // Command handler
+    // === COMMAND HANDLER ===
     const prefix = config.prefix;
     if (!message.content.startsWith(prefix)) return;
-
     const args = message.content.slice(prefix.length).trim().split(/\s+/);
     const commandName = args.shift().toLowerCase();
     const command =
@@ -126,13 +210,6 @@ client.on("messageCreate", async (message) => {
         console.error(`Command error: ${error.message}`);
         message.reply(`❌ | ${error.message}`);
     }
-});
-
-// ✅ On ready
-client.once("ready", async () => {
-    console.log(`✅ Logged in as ${client.user.tag}`);
-    await ensureRoleButtons();
-    client.setInterval(ensureRoleButtons, 60_000 * 5); // check every 5 minutes
 });
 
 client.login(config.token);
