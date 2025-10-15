@@ -7,14 +7,16 @@ const {
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
-  Partials
+  Partials,
+  Events
 } = require('discord.js');
 const config = require('./config.js');
 const { loadCommands, loadSlashCommands } = require('./utils/commandLoader');
 const loadEvents = require('./utils/eventLoader');
 const { getData, setData } = require('./database.js');
-const warnModule = require('./modules/commands/warning.js'); // ✅ keep auto warning system
+const warnModule = require('./modules/commands/warning.js'); // ✅ auto warning
 
+// === CLIENT ===
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -48,9 +50,10 @@ const PANEL_MARKER = '🎭 **Choose a role below:**';
 // === BUTTON BUILDER ===
 function buildButtonsForChannel(channelId, member) {
   const hasRole = (id) => member?.roles?.cache?.has(roleMap[id]);
+  const row = new ActionRowBuilder();
 
   if (channelId === PVB_CHANNEL_ID) {
-    return new ActionRowBuilder().addComponents(
+    row.addComponents(
       new ButtonBuilder()
         .setCustomId('secret_role')
         .setLabel('Secret Role')
@@ -60,10 +63,8 @@ function buildButtonsForChannel(channelId, member) {
         .setLabel('Godly Role')
         .setStyle(hasRole('godly_role') ? ButtonStyle.Success : ButtonStyle.Secondary)
     );
-  }
-
-  if (channelId === GAG_CHANNEL_ID) {
-    return new ActionRowBuilder().addComponents(
+  } else if (channelId === GAG_CHANNEL_ID) {
+    row.addComponents(
       new ButtonBuilder()
         .setCustomId('grand_master')
         .setLabel('Grand Master')
@@ -79,7 +80,7 @@ function buildButtonsForChannel(channelId, member) {
     );
   }
 
-  return new ActionRowBuilder();
+  return row;
 }
 
 // === PANEL CREATION ===
@@ -99,15 +100,14 @@ async function ensurePanelInChannel(channel) {
   if (!existing) await sendPanelToChannel(channel);
 }
 
-// === MEMBER-BASED PANEL UPDATE ===
+// === EPHEMERAL ROLE PANEL (per user) ===
 async function updatePanelForMember(member, channel) {
   const row = buildButtonsForChannel(channel.id, member);
   try {
-    await channel.send({
-      content: `${member.displayName}, here’s your updated role view 👇`,
-      components: [row],
-      ephemeral: true
-    });
+    await member.send({
+      content: `🎭 **Your Role Panel for ${channel.name}:**`,
+      components: [row]
+    }).catch(() => {});
   } catch (err) {
     console.warn('❌ Ephemeral panel failed:', err.message);
   }
@@ -121,12 +121,13 @@ client.once('ready', async () => {
   try { await loadSlashCommands(client); } catch (e) { console.warn('loadSlashCommands err', e); }
   try { loadEvents(client); } catch (e) { console.warn('loadEvents err', e); }
 
+  // ensure all panels exist
   for (const cid of ROLE_CHANNELS) {
     const channel = await client.channels.fetch(cid).catch(() => null);
     if (channel) await ensurePanelInChannel(channel);
   }
 
-  // periodic check
+  // periodic 5 min recheck
   setInterval(async () => {
     for (const cid of ROLE_CHANNELS) {
       const channel = await client.channels.fetch(cid).catch(() => null);
@@ -137,8 +138,8 @@ client.once('ready', async () => {
   console.log('🔁 Role panel auto-check active (5m).');
 });
 
-// === MESSAGE DELETE (Recreate Panel) ===
-client.on('messageDelete', async (message) => {
+// === AUTO RECREATE PANEL IF DELETED ===
+client.on(Events.MessageDelete, async (message) => {
   if (!message?.content?.includes(PANEL_MARKER)) return;
   if (!ROLE_CHANNELS.includes(message.channelId)) return;
   const channel = await client.channels.fetch(message.channelId).catch(() => null);
@@ -148,27 +149,24 @@ client.on('messageDelete', async (message) => {
   }
 });
 
-// === INTERACTION ===
-client.on('interactionCreate', async (interaction) => {
+// === ROLE BUTTON INTERACTION ===
+client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isButton()) return;
-  const customId = interaction.customId;
-  const mappedRoleId = roleMap[customId];
-  if (!mappedRoleId) return;
+  const roleId = roleMap[interaction.customId];
+  if (!roleId) return;
 
-  const guild = interaction.guild;
-  const member = await guild.members.fetch(interaction.user.id).catch(() => null);
-  if (!member) return interaction.reply({ content: '❌ Member not found.', ephemeral: true });
+  const member = interaction.member;
+  const has = member.roles.cache.has(roleId);
 
-  const has = member.roles.cache.has(mappedRoleId);
-  if (has) await member.roles.remove(mappedRoleId, 'Toggled via panel');
-  else await member.roles.add(mappedRoleId, 'Toggled via panel');
+  if (has) await member.roles.remove(roleId, 'Toggled via panel');
+  else await member.roles.add(roleId, 'Toggled via panel');
 
+  await interaction.deferUpdate().catch(() => {});
   await updatePanelForMember(member, interaction.channel);
-  await interaction.deferUpdate();
 });
 
-// === MEMBER UPDATES ===
-client.on('guildMemberUpdate', async (_, newMember) => {
+// === AUTO UPDATE ON MEMBER ROLE CHANGE ===
+client.on(Events.GuildMemberUpdate, async (_, newMember) => {
   for (const cid of ROLE_CHANNELS) {
     const channel = await newMember.guild.channels.fetch(cid).catch(() => null);
     if (channel) await updatePanelForMember(newMember, channel);
@@ -179,7 +177,7 @@ client.on('guildMemberUpdate', async (_, newMember) => {
 const WELCOME_CHANNEL = '1427870606660997192';
 const GOODBYE_CHANNEL = '1427870731508781066';
 
-client.on('guildMemberAdd', async (member) => {
+client.on(Events.GuildMemberAdd, async (member) => {
   const channel = member.guild.channels.cache.get(WELCOME_CHANNEL);
   if (!channel) return;
   const embed = new EmbedBuilder()
@@ -192,7 +190,7 @@ client.on('guildMemberAdd', async (member) => {
   await channel.send({ embeds: [embed] });
 });
 
-client.on('guildMemberRemove', async (member) => {
+client.on(Events.GuildMemberRemove, async (member) => {
   const channel = member.guild.channels.cache.get(GOODBYE_CHANNEL);
   if (!channel) return;
   const embed = new EmbedBuilder()
@@ -204,10 +202,10 @@ client.on('guildMemberRemove', async (member) => {
 });
 
 // === MESSAGE: WFL + AUTO WARNING ===
-client.on('messageCreate', async (message) => {
+client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot || !message.guild) return;
 
-  // Detect "win lose", "win or lose", "wfl", "w.f.l", etc
+  // Detect “win lose”, “w.f.l”, etc
   const wflRegex = /\b(?:win\s*or\s*lose|win\s*lose|w[\s\/\.\-]*f[\s\/\.\-]*l)\b/i;
   if (wflRegex.test(message.content)) {
     try {
@@ -219,14 +217,14 @@ client.on('messageCreate', async (message) => {
     }
   }
 
-  // ✅ Auto warning module restored
+  // ✅ Auto warning system
   try {
     await warnModule.handleEvent({ message });
   } catch (err) {
     console.error('Auto-warning error:', err);
   }
 
-  // Prefix command handler
+  // === PREFIX COMMAND ===
   const prefix = config.prefix;
   if (!message.content.startsWith(prefix)) return;
   const args = message.content.slice(prefix.length).trim().split(/\s+/);
