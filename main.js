@@ -15,6 +15,7 @@ const { loadCommands, loadSlashCommands } = require('./utils/commandLoader');
 const loadEvents = require('./utils/eventLoader');
 const { getData, setData } = require('./database.js');
 const warnModule = require('./modules/commands/warning.js'); // auto warning
+const xpModule = require('./modules/commands/rank.js'); // rank/xp module
 
 // === CLIENT ===
 const client = new Client({
@@ -109,6 +110,11 @@ client.once('ready', async () => {
   }, 5 * 60 * 1000);
 
   console.log('🔁 Role panel auto-check active (5m).');
+
+  // auto assign level roles on bot start
+  for (const guild of client.guilds.cache.values()) {
+    await xpModule.autoAssignAllMembers(guild);
+  }
 });
 
 // === AUTO RECREATE PANEL IF DELETED ===
@@ -149,17 +155,22 @@ const GOODBYE_CHANNEL = '1427870731508781066';
 
 client.on(Events.GuildMemberAdd, async (member) => {
   const channel = member.guild.channels.cache.get(WELCOME_CHANNEL);
-  if (!channel) return;
-  const embed = new EmbedBuilder()
-    .setColor(Colors.Green)
-    .setTitle(`👋 Welcome ${member.user.tag}!`)
-    .setDescription(`Glad to have you here, <@${member.id}>! 🎉`)
-    .addFields({ name: 'Member Count', value: `${member.guild.memberCount}`, inline: true })
-    .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
-    .setTimestamp();
-  await channel.send({ embeds: [embed] });
+  if (channel) {
+    const embed = new EmbedBuilder()
+      .setColor(Colors.Green)
+      .setTitle(`👋 Welcome ${member.user.tag}!`)
+      .setDescription(`Glad to have you here, <@${member.id}>! 🎉`)
+      .addFields({ name: 'Member Count', value: `${member.guild.memberCount}`, inline: true })
+      .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+      .setTimestamp();
+    await channel.send({ embeds: [embed] });
+  }
 
-  await applyEmojiToNickname(member); // auto nickname on join
+  // Apply emoji nickname
+  await applyEmojiToNickname(member);
+
+  // Assign Rookie / level 0 role automatically
+  await xpModule.assignLevelRole(member, 0);
 });
 
 client.on(Events.GuildMemberRemove, async (member) => {
