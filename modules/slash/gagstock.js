@@ -88,21 +88,19 @@ module.exports = {
             const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
             const next = this.getNextAligned();
 
-            const allItems = [
-                ...(data.gearStock || []),
-                ...(data.eggStock || []),
-                ...(data.seedsStock || [])
-            ];
+            const gearItems = data.gearStock || [];
+            const seedItems = [...(data.seedsStock || []), ...(data.eggStock || [])];
 
             const embed = new EmbedBuilder()
                 .setTitle("🌱 Grow A Garden Stock Update")
                 .setDescription(`🕒 Current PH Time: ${now.toLocaleTimeString("en-PH",{hour12:true})}\n🕒 Next Restock: ${next.toLocaleTimeString("en-PH",{hour12:true})}`)
                 .addFields(
-                    { name: "Stock Items", value: this.formatItems(allItems).slice(0,1024) || "❌ Empty" }
+                    { name: "🛠️ Gear Stock", value: this.formatItems(gearItems).slice(0,1024) || "❌ Empty" },
+                    { name: "🥚 Seeds & Eggs", value: this.formatItems(seedItems).slice(0,1024) || "❌ Empty" }
                 )
                 .setColor("Green");
 
-            const specials = allItems.filter(i => this.SPECIAL_ITEMS.some(s => i.name.toLowerCase().includes(s)) && (i.quantity ?? 0) > 0);
+            const specials = [...gearItems, ...seedItems].filter(i => this.SPECIAL_ITEMS.some(s => i.name.toLowerCase().includes(s)) && (i.quantity ?? 0) > 0);
             let ping = "";
             if(specials.length > 0){
                 const roleIds = ["1427560078411563059","1427560648673595402","1427560940068536320"];
@@ -163,7 +161,6 @@ module.exports = {
             allData[guildId] = gcData;
             await setData("gagstock/discord", allData);
 
-            // ✅ Do NOT send immediately, wait for aligned time
             this.startAutoStock(channel);
 
             return interaction.reply("✅ GAG Auto-stock **enabled**! It will post at the next aligned restock time.");
