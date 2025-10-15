@@ -188,24 +188,6 @@ Next Restock (PH): ${next}
         }
     },
 
-    // ✅ Prefix command handler
-    async letStart({ message, args, client }) {
-        const guildId = message.guild.id;
-        const allData = await getData("gagstock/discord") || {};
-        const gcData = allData[guildId];
-        if(gcData?.enabled && gcData.channelId)
-async letStart({ message, args, client }) {
-        const guildId = message.guild.id;
-        const allData = await getData("gagstock/discord") || {};
-        const gcData = allData[guildId];
-        if (gcData?.enabled && gcData.channelId) {
-            const guild = client.guilds.cache.get(guildId);
-            if (!guild) return;
-            const channel = guild.channels.cache.get(gcData.channelId);
-            if (channel) this.startAutoStock(channel);
-        }
-    },
-
     async onReady(client) {
         const allData = await getData("gagstock/discord") || {};
         for (const [guildId, gcData] of Object.entries(allData)) {
