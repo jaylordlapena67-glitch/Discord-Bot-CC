@@ -115,12 +115,29 @@ client.once('ready', async () => {
     await xpModule.autoAssignAllMembers(guild);
   }
 
-  // ✅ Resume pvbstock auto feature if enabled before restart
+  // ✅ Resume PVBR stock auto feature
   const pvbstock = client.commands.get("pvbstock");
   if (pvbstock?.onReady) {
     await pvbstock.onReady(client);
-    console.log("🌱 PVBR auto-stock resumed for all guilds with enabled state.");
+    console.log("🌱 PVBR auto-stock resumed for all guilds.");
   }
+
+  // ✅ Resume GAG stock auto feature
+  const gagstock = client.commands.get("gagstock");
+  if (gagstock?.onReady) {
+    await gagstock.onReady(client);
+    console.log("🌱 GAG auto-stock resumed for all guilds.");
+  }
+
+  // update all nicknames on ready
+  console.log("🔄 Checking and updating nicknames with emojis...");
+  for (const guild of client.guilds.cache.values()) {
+    const members = await guild.members.fetch();
+    for (const member of members.values()) {
+      await applyEmojiToNickname(member);
+    }
+  }
+  console.log("✅ Nickname emojis updated for all members!");
 });
 
 // === AUTO RECREATE PANEL IF DELETED ===
@@ -154,7 +171,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
-// === WELCOME / GOODBYE ===
+// === WELCOME / GOODBYE CHANNELS ===
 const WELCOME_CHANNEL = '1427870606660997192';
 const GOODBYE_CHANNEL = '1427870731508781066';
 
@@ -205,9 +222,7 @@ client.on(Events.MessageCreate, async (message) => {
   if (!message.content.startsWith(prefix)) return;
   const args = message.content.slice(prefix.length).trim().split(/\s+/);
   const commandName = args.shift()?.toLowerCase();
-  const command =
-    client.commands.get(commandName) ||
-    client.commands.find(cmd => cmd.config?.aliases?.includes(commandName));
+  const command = client.commands.get(commandName) || client.commands.find(cmd => cmd.config?.aliases?.includes(commandName));
   if (!command) return;
 
   try { await command.letStart({ args, message, discord: { client } }); } catch (error) {
@@ -218,10 +233,10 @@ client.on(Events.MessageCreate, async (message) => {
 
 // === AUTO NICKNAME EMOJI SYSTEM ===
 const ROLE_EMOJIS = {
-  "1427447542475657278": { emoji: "👑", color: Colors.Gold },
-  "1427959238705025175": { emoji: "🛡️", color: Colors.Red },
-  "1427959010111393854": { emoji: "⚔️", color: Colors.Blue },
-  "1427974807672328254": { emoji: "💼", color: Colors.Purple }
+  "1427447542475657278": { emoji: "👑", color: Colors.Gold }, // Owner
+  "1427959238705025175": { emoji: "🛡️", color: Colors.Red }, // Admin
+  "1427959010111393854": { emoji: "⚔️", color: Colors.Blue }, // Moderator
+  "1427974807672328254": { emoji: "💼", color: Colors.Purple } // Midman
 };
 
 async function applyEmojiToNickname(member) {
@@ -247,19 +262,7 @@ async function applyEmojiToNickname(member) {
   }
 }
 
-// update all on bot start
-client.once("ready", async () => {
-  console.log("🔄 Checking and updating nicknames with emojis...");
-  for (const guild of client.guilds.cache.values()) {
-    const members = await guild.members.fetch();
-    for (const member of members.values()) {
-      await applyEmojiToNickname(member);
-    }
-  }
-  console.log("✅ Nickname emojis updated for all members!");
-});
-
-// update when roles change
+// update nickname emojis on role update
 client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
   await applyEmojiToNickname(newMember);
 });
