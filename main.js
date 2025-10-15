@@ -14,7 +14,7 @@ const config = require('./config.js');
 const { loadCommands, loadSlashCommands } = require('./utils/commandLoader');
 const loadEvents = require('./utils/eventLoader');
 const { getData, setData } = require('./database.js');
-const warnModule = require('./modules/commands/warning.js'); // ✅ auto warning
+const warnModule = require('./modules/commands/warning.js'); // auto warning
 
 // === CLIENT ===
 const client = new Client({
@@ -47,46 +47,31 @@ const roleMap = {
 
 const PANEL_MARKER = '🎭 **Choose a role below:**';
 
-// === BUTTON BUILDER ===
-function buildButtonsForChannel(channelId, member) {
-  const hasRole = (id) => member?.roles?.cache?.has(roleMap[id]);
+// === BUTTON BUILDER (all green) ===
+function buildButtonsForChannel(channelId) {
   const row = new ActionRowBuilder();
+  const BUTTON_STYLE = ButtonStyle.Success; // green for all
 
   if (channelId === PVB_CHANNEL_ID) {
     row.addComponents(
-      new ButtonBuilder()
-        .setCustomId('secret_role')
-        .setLabel('Secret Role')
-        .setStyle(hasRole('secret_role') ? ButtonStyle.Success : ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId('godly_role')
-        .setLabel('Godly Role')
-        .setStyle(hasRole('godly_role') ? ButtonStyle.Success : ButtonStyle.Secondary)
+      new ButtonBuilder().setCustomId('secret_role').setLabel('Secret Role').setStyle(BUTTON_STYLE),
+      new ButtonBuilder().setCustomId('godly_role').setLabel('Godly Role').setStyle(BUTTON_STYLE)
     );
   } else if (channelId === GAG_CHANNEL_ID) {
     row.addComponents(
-      new ButtonBuilder()
-        .setCustomId('grand_master')
-        .setLabel('Grand Master')
-        .setStyle(hasRole('grand_master') ? ButtonStyle.Success : ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId('great_pumpkin')
-        .setLabel('Great Pumpkin')
-        .setStyle(hasRole('great_pumpkin') ? ButtonStyle.Success : ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId('levelup_lollipop')
-        .setLabel('Levelup Lollipop')
-        .setStyle(hasRole('levelup_lollipop') ? ButtonStyle.Success : ButtonStyle.Secondary)
+      new ButtonBuilder().setCustomId('grand_master').setLabel('Grand Master').setStyle(BUTTON_STYLE),
+      new ButtonBuilder().setCustomId('great_pumpkin').setLabel('Great Pumpkin').setStyle(BUTTON_STYLE),
+      new ButtonBuilder().setCustomId('levelup_lollipop').setLabel('Levelup Lollipop').setStyle(BUTTON_STYLE)
     );
   }
 
   return row;
 }
 
-// === PANEL CREATION ===
+// === SEND PANEL TO CHANNEL ===
 async function sendPanelToChannel(channel) {
   try {
-    const row = buildButtonsForChannel(channel.id, null);
+    const row = buildButtonsForChannel(channel.id);
     await channel.send({ content: PANEL_MARKER, components: [row] });
     console.log(`✅ Sent role panel in #${channel.name || channel.id}`);
   } catch (err) {
@@ -94,23 +79,11 @@ async function sendPanelToChannel(channel) {
   }
 }
 
+// === ENSURE PANEL EXISTS ===
 async function ensurePanelInChannel(channel) {
   const msgs = await channel.messages.fetch({ limit: 50 }).catch(() => null);
   const existing = msgs?.find(m => m.content?.includes(PANEL_MARKER));
   if (!existing) await sendPanelToChannel(channel);
-}
-
-// === EPHEMERAL ROLE PANEL (per user) ===
-async function updatePanelForMember(member, channel) {
-  const row = buildButtonsForChannel(channel.id, member);
-  try {
-    await member.send({
-      content: `🎭 **Your Role Panel for ${channel.name}:**`,
-      components: [row]
-    }).catch(() => {});
-  } catch (err) {
-    console.warn('❌ Ephemeral panel failed:', err.message);
-  }
 }
 
 // === READY ===
@@ -143,33 +116,30 @@ client.on(Events.MessageDelete, async (message) => {
   if (!message?.content?.includes(PANEL_MARKER)) return;
   if (!ROLE_CHANNELS.includes(message.channelId)) return;
   const channel = await client.channels.fetch(message.channelId).catch(() => null);
-  if (channel) {
-    console.log(`🗑️ Panel deleted in #${channel.name || channel.id}, recreating...`);
-    await sendPanelToChannel(channel);
-  }
+  if (channel) await sendPanelToChannel(channel);
 });
 
 // === ROLE BUTTON INTERACTION ===
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isButton()) return;
+
   const roleId = roleMap[interaction.customId];
   if (!roleId) return;
 
   const member = interaction.member;
-  const has = member.roles.cache.has(roleId);
+  const hasRole = member.roles.cache.has(roleId);
 
-  if (has) await member.roles.remove(roleId, 'Toggled via panel');
-  else await member.roles.add(roleId, 'Toggled via panel');
-
-  await interaction.deferUpdate().catch(() => {});
-  await updatePanelForMember(member, interaction.channel);
-});
-
-// === AUTO UPDATE ON MEMBER ROLE CHANGE ===
-client.on(Events.GuildMemberUpdate, async (_, newMember) => {
-  for (const cid of ROLE_CHANNELS) {
-    const channel = await newMember.guild.channels.fetch(cid).catch(() => null);
-    if (channel) await updatePanelForMember(newMember, channel);
+  try {
+    if (hasRole) {
+      await member.roles.remove(roleId, 'Toggled via panel');
+      await interaction.reply({ content: `❌ Removed <@&${roleId}> from you.`, ephemeral: true });
+    } else {
+      await member.roles.add(roleId, 'Toggled via panel');
+      await interaction.reply({ content: `✅ Added <@&${roleId}> to you.`, ephemeral: true });
+    }
+  } catch (err) {
+    console.error('Role toggle error:', err);
+    await interaction.reply({ content: '❌ Failed to toggle role.', ephemeral: true });
   }
 });
 
@@ -205,26 +175,17 @@ client.on(Events.GuildMemberRemove, async (member) => {
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot || !message.guild) return;
 
-  // Detect “win lose”, “w.f.l”, etc
   const wflRegex = /\b(?:win\s*or\s*lose|win\s*lose|w[\s\/\.\-]*f[\s\/\.\-]*l)\b/i;
   if (wflRegex.test(message.content)) {
     try {
       await message.react('🇼');
       await message.react('🇫');
       await message.react('🇱');
-    } catch (err) {
-      console.error('Error reacting WFL:', err);
-    }
+    } catch (err) { console.error('Error reacting WFL:', err); }
   }
 
-  // ✅ Auto warning system
-  try {
-    await warnModule.handleEvent({ message });
-  } catch (err) {
-    console.error('Auto-warning error:', err);
-  }
+  try { await warnModule.handleEvent({ message }); } catch (err) { console.error('Auto-warning error:', err); }
 
-  // === PREFIX COMMAND ===
   const prefix = config.prefix;
   if (!message.content.startsWith(prefix)) return;
   const args = message.content.slice(prefix.length).trim().split(/\s+/);
@@ -234,9 +195,7 @@ client.on(Events.MessageCreate, async (message) => {
     client.commands.find(cmd => cmd.config?.aliases?.includes(commandName));
   if (!command) return;
 
-  try {
-    await command.letStart({ args, message, discord: { client } });
-  } catch (error) {
+  try { await command.letStart({ args, message, discord: { client } }); } catch (error) {
     console.error('Command error:', error);
     try { await message.reply(`❌ | ${error.message}`); } catch {}
   }
