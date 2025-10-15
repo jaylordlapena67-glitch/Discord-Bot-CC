@@ -82,6 +82,13 @@ async function assignLevelRole(member, xp) {
   }
 }
 
+// === Assign Rookie role to new member ===
+async function assignNewMemberRole(member) {
+  const dataPath = `xp/${member.guild.id}/${member.id}`;
+  let userData = (await getData(dataPath)) || { xp: 0 };
+  await assignLevelRole(member, userData.xp);
+}
+
 // === Export command ===
 module.exports = {
   config: {
@@ -137,5 +144,9 @@ module.exports = {
       await assignLevelRole(member, userData.xp);
     }
     console.log(`✅ All members in ${guild.name} assigned level roles.`);
-  }
+  },
+
+  // Export new member assign helper
+  assignNewMemberRole,
+  assignLevelRole
 };
