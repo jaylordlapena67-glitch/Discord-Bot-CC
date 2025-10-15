@@ -21,7 +21,7 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.MessageReactions
+    GatewayIntentBits.GuildMessageReactions // ✅ FIXED
   ],
   partials: [Partials.Message, Partials.Channel, Partials.Reaction]
 });
@@ -122,7 +122,6 @@ async function updatePanelForMemberInChannel(guild, channelId, member) {
     const row = buildButtonsForChannel(channelId, member);
     await panel.edit({ components: [row] });
   } catch (err) {
-    // ignore edit failures (permissions or race)
     console.warn('Could not edit panel message:', err?.message || err);
   }
 }
@@ -201,15 +200,10 @@ client.on('interactionCreate', async (interaction) => {
       try {
         const row = buildButtonsForChannel(channelId, member);
         await panelMessage.edit({ components: [row] });
-      } catch (err) {
-        // ignore
-      }
+      } catch (err) {}
     }
 
-    // Also update other panels for this member (if needed)
     await updateAllPanelsForMember(member);
-
-    // defer update (no visible reply)
     await interaction.deferUpdate();
   } catch (err) {
     console.error('interactionCreate error:', err);
@@ -218,7 +212,6 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 // === GUILDMEMBERUPDATE ===
-// When someone's roles change, update panels so colors reflect that member
 client.on('guildMemberUpdate', async (oldMember, newMember) => {
   try {
     await updateAllPanelsForMember(newMember);
@@ -259,11 +252,11 @@ client.on('guildMemberRemove', async (member) => {
   } catch (err) { console.error('guildMemberRemove err', err); }
 });
 
-// === MESSAGE CREATE: WFL detector, warning, commands ===
+// === MESSAGE CREATE: WFL detector ===
 client.on('messageCreate', async (message) => {
   if (message.author.bot || !message.guild) return;
 
-  // WFL detection (matches wfl, w.f.l, w/f/l, w f l, win lose, win or lose)
+  // Detect "win lose", "win or lose", "wfl", "w.f.l", etc
   const wflRegex = /\b(?:win\s*or\s*lose|win\s*lose|w[\s\/\.\-]*f[\s\/\.\-]*l)\b/i;
   if (wflRegex.test(message.content)) {
     try {
