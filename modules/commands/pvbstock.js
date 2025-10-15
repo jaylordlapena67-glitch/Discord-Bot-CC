@@ -156,7 +156,8 @@ ${ping}
         }
     },
 
-    async execute({ message, args, client }) {
+    // ✅ Convert execute to run for prefix command
+    async run({ message, args }) {
         const member = message.member;
         if (!member.permissions.has(PermissionsBitField.Flags.Administrator))
             return message.reply("🚫 Only **Admins** can use this command.");
