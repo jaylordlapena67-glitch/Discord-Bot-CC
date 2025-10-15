@@ -1,10 +1,16 @@
+const { PermissionsBitField, MessageEmbed } = require("discord.js");
 const https = require("https");
-const { EmbedBuilder, PermissionsBitField } = require("discord.js");
 const { getData, setData } = require("../../database.js");
 
 module.exports = {
-    name: "gagstock",
-    description: "Grow A Garden auto-stock updates (Admin only)",
+    config: {
+        name: "gagstock",
+        description: "Grow A Garden auto-stock updates (Admin only)",
+        usage: "-gagstock <on|off|check>",
+        cooldown: 5,
+        permission: 0,
+        aliases: ["gagstocks"]
+    },
 
     autoStockTimers: {},
 
@@ -80,7 +86,7 @@ module.exports = {
             const gearItems = data.gearStock || [];
             const seedItems = [...(data.seedsStock || []), ...(data.eggStock || [])];
 
-            const embed = new EmbedBuilder()
+            const embed = new MessageEmbed()
                 .setTitle("🌱 Grow A Garden Stock Update")
                 .setDescription(`🕒 Current PH Time: ${now.toLocaleTimeString("en-PH",{hour12:true})}\n🕒 Next Restock: ${next.toLocaleTimeString("en-PH",{hour12:true})}`)
                 .addFields(
@@ -111,6 +117,10 @@ module.exports = {
         if(this.autoStockTimers[guildId]) clearTimeout(this.autoStockTimers[guildId]);
 
         this.autoStockTimers[guildId] = setTimeout(async () => {
+            const allData = await getData("gagstock/discord") || {};
+            const gcData = allData[guildId];
+            if(!gcData?.enabled) return this.stopAutoStock(channel, guildId);
+
             await this.sendStock(channel);
             this.scheduleNext(channel, guildId);
         }, delay);
@@ -118,6 +128,7 @@ module.exports = {
 
     startAutoStock(channel) {
         const guildId = channel.guild.id;
+        if(this.autoStockTimers[guildId]) return;
         this.scheduleNext(channel, guildId);
     },
 
@@ -130,28 +141,31 @@ module.exports = {
     },
 
     async run({ message, args }) {
-        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator))
+        const member = message.member;
+        if (!member.permissions.has(PermissionsBitField.Flags.Administrator))
             return message.reply("🚫 Only **Admins** can use this command.");
 
         const action = args[0]?.toLowerCase();
-        if(!["on","off","check"].includes(action)) return message.reply("❌ Usage: -gagstock on/off/check");
+        if (!["on","off","check"].includes(action))
+            return message.reply("⚠️ Invalid action! Use `on`, `off`, or `check`.");
 
         const channel = message.channel;
         const guildId = message.guild.id;
         const allData = await getData("gagstock/discord") || {};
         const gcData = allData[guildId] || { enabled: false, channelId: null };
 
-        if(action === "on") {
-            if(gcData.enabled) return message.reply("✅ GAG Auto-stock already **enabled**.");
-            gcData.enabled = true; gcData.channelId = channel.id;
+        if (action === "on") {
+            if (gcData.enabled) return message.reply("✅ GAG Auto-stock is already **enabled**.");
+            gcData.enabled = true;
+            gcData.channelId = channel.id;
             allData[guildId] = gcData;
             await setData("gagstock/discord", allData);
             this.startAutoStock(channel);
-            return message.reply("✅ GAG Auto-stock **enabled**!");
+            return message.reply("✅ GAG Auto-stock **enabled**! It will post at the next aligned restock time.");
         }
 
-        else if(action === "off") {
-            if(!gcData.enabled) return message.reply("⚠️ GAG Auto-stock already **disabled**.");
+        if (action === "off") {
+            if (!gcData.enabled) return message.reply("⚠️ GAG Auto-stock is already **disabled**.");
             gcData.enabled = false;
             allData[guildId] = gcData;
             await setData("gagstock/discord", allData);
@@ -159,32 +173,29 @@ module.exports = {
             return message.reply("🛑 GAG Auto-stock **disabled**.");
         }
 
-        else if(action === "check") {
+        if (action === "check") {
             const status = gcData.enabled ? "✅ Enabled" : "❌ Disabled";
             const location = gcData.channelId ? `<#${gcData.channelId}>` : "`None`";
-            const next = this.getNextAligned().toLocaleTimeString("en-PH",{hour12:true});
+            const next = this.getNextAligned().toLocaleTimeString("en-PH", { hour12: true });
 
-            const embed = new EmbedBuilder()
-                .setTitle("📊 GAG Auto-stock Status")
-                .addFields(
-                    { name: "Status", value: status, inline: true },
-                    { name: "Channel", value: location, inline: true },
-                    { name: "Next Restock (PH)", value: next, inline: true }
-                )
-                .setColor(gcData.enabled ? "Green" : "Red");
-
-            return message.reply({ embeds: [embed] });
+            const text = `
+📊 GAG Auto-stock Status
+Status: ${status}
+Channel: ${location}
+Next Restock (PH): ${next}
+            `;
+            return message.reply(text);
         }
     },
 
     async onReady(client) {
         const allData = await getData("gagstock/discord") || {};
-        for(const [guildId, gcData] of Object.entries(allData)) {
-            if(gcData.enabled && gcData.channelId) {
+        for (const [guildId, gcData] of Object.entries(allData)) {
+            if (gcData.enabled && gcData.channelId) {
                 const guild = client.guilds.cache.get(guildId);
-                if(!guild) continue;
+                if (!guild) continue;
                 const channel = guild.channels.cache.get(gcData.channelId);
-                if(channel) this.startAutoStock(channel);
+                if (channel) this.startAutoStock(channel);
             }
         }
     }
