@@ -156,7 +156,9 @@ ${ping}
         }
     },
 
-    async run({ message, args }) {
+    // ✅ MAIN COMMAND FUNCTION (fixed for your handler)
+    async letStart({ args, message, discord }) {
+        const client = discord.client;
         const member = message.member;
         if (!member.permissions.has(PermissionsBitField.Flags.Administrator))
             return message.reply("🚫 Only **Admins** can use this command.");
@@ -204,6 +206,7 @@ Next Restock (PH): ${next}
         }
     },
 
+    // ✅ Auto resume after restart
     async onReady(client) {
         const allData = await getData("pvbstock/discord") || {};
         for (const [guildId, gcData] of Object.entries(allData)) {
@@ -211,7 +214,10 @@ Next Restock (PH): ${next}
                 const guild = client.guilds.cache.get(guildId);
                 if (!guild) continue;
                 const channel = guild.channels.cache.get(gcData.channelId);
-                if (channel) this.startAutoStock(channel);
+                if (channel) {
+                    this.startAutoStock(channel);
+                    console.log(`🔁 Auto-stock resumed for guild ${guild.name}`);
+                }
             }
         }
     }
