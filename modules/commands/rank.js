@@ -8,7 +8,7 @@ const { setData, getData } = require("../../database.js");
 
 const XP_PER_MESSAGE = 5;
 
-// Role names with emojis
+// Level names with emojis
 const LEVEL_NAMES = [
   "🌱 Rookie",
   "🌿 Newcomer",
@@ -27,7 +27,26 @@ const LEVEL_NAMES = [
   "🌾 Legendary King"
 ];
 
-// Special roles (by ID) and their emojis
+// 🎨 Corresponding role colors (hex)
+const LEVEL_COLORS = [
+  "#57F287", // Rookie
+  "#3BA55C", // Newcomer
+  "#FEE75C", // Protege
+  "#F1C40F", // Journeyer
+  "#FAA61A", // Adventurer
+  "#E67E22", // Spartan
+  "#ED4245", // Champion
+  "#EB459E", // Guardian
+  "#5865F2", // Conqueror
+  "#99AAB5", // Hero
+  "#2ECC71", // Master
+  "#9B59B6", // Legend
+  "#11806A", // Sovereign
+  "#1ABC9C", // Emperor
+  "#F47FFF"  // Legendary King
+];
+
+// 🔰 Special roles (by ID)
 const SPECIAL_ROLES = {
   "1427447542475657278": "👑", // Owner
   "1427959238705025175": "🛡️", // Admin
@@ -35,31 +54,36 @@ const SPECIAL_ROLES = {
   "1427974807672328254": "⚔️"  // Midman
 };
 
-// XP growth curve
+// XP curve
 function getXPForLevel(level) {
   return Math.floor(100 * Math.pow(level, 2.5)) + 100;
 }
-
 function getLevelForXP(xp) {
   let level = 0;
   while (xp >= getXPForLevel(level + 1)) level++;
   return level;
 }
-
 function getRoleNameForLevel(level) {
   return LEVEL_NAMES[Math.min(level, LEVEL_NAMES.length - 1)];
 }
+function getRoleColorForLevel(level) {
+  return LEVEL_COLORS[Math.min(level, LEVEL_COLORS.length - 1)];
+}
 
-// Create or update level role hierarchy
+// 🧱 Create or update role
 async function ensureRoleExists(guild, roleName, level) {
+  const color = getRoleColorForLevel(level);
   let role = guild.roles.cache.find(r => r.name === roleName);
   if (!role) {
     role = await guild.roles.create({
       name: roleName,
-      color: "Green",
+      color,
       reason: "Level role auto-created"
     }).catch(() => null);
+  } else if (role.color !== color) {
+    await role.setColor(color).catch(() => {});
   }
+
   if (!role) return null;
 
   const basePosition = 10;
@@ -70,13 +94,13 @@ async function ensureRoleExists(guild, roleName, level) {
   return role;
 }
 
-// Update nickname with emoji
+// ✨ Nickname update with emoji
 async function updateNickname(member, roleName) {
   if (!member.manageable) return;
 
   let newName = member.user.username;
 
-  // Add special role emoji (priority order)
+  // Add special role emoji
   for (const [roleId, emoji] of Object.entries(SPECIAL_ROLES)) {
     if (member.roles.cache.has(roleId)) {
       newName += ` ${emoji}`;
@@ -93,7 +117,7 @@ async function updateNickname(member, roleName) {
   }
 }
 
-// Command
+// 🧩 Rank Command
 module.exports = {
   config: {
     name: "rank",
@@ -112,7 +136,7 @@ module.exports = {
     const dataPath = `xp/${guildId}/${userId}`;
     let userData = (await getData(dataPath)) || { xp: 0 };
 
-    // Add XP for the sender
+    // Add XP if checking self
     if (target.id === message.author.id) {
       userData.xp += XP_PER_MESSAGE;
       await setData(dataPath, userData);
@@ -120,8 +144,8 @@ module.exports = {
 
     const level = getLevelForXP(userData.xp);
     const roleName = getRoleNameForLevel(level);
+    const color = getRoleColorForLevel(level);
 
-    // Update role and nickname
     const member = await message.guild.members.fetch(userId).catch(() => null);
     if (member) {
       const role = await ensureRoleExists(message.guild, roleName, level);
@@ -134,7 +158,7 @@ module.exports = {
     }
 
     const embed = new EmbedBuilder()
-      .setColor("Blue")
+      .setColor(color)
       .setTitle(`🏆 ${target.username}'s Rank`)
       .setDescription(`**Role:** ${roleName}\n**Level:** ${level}\n**XP:** ${userData.xp}\n**Next Level:** ${getXPForLevel(level + 1)} XP`)
       .setTimestamp();
@@ -142,7 +166,7 @@ module.exports = {
     await message.channel.send({ embeds: [embed] });
   },
 
-  // Auto-update all nicknames on restart
+  // Auto-refresh all nicknames
   updateAllNicknames: async function (guild) {
     const members = await guild.members.fetch();
     for (const member of members.values()) {
@@ -158,7 +182,7 @@ module.exports = {
   }
 };
 
-// Event: new member joins
+// 🧩 Auto-apply on join
 module.exports.onMemberJoin = async function (member) {
   const guild = member.guild;
   const guildId = guild.id;
@@ -170,8 +194,8 @@ module.exports.onMemberJoin = async function (member) {
 
   const level = getLevelForXP(userData.xp);
   const roleName = getRoleNameForLevel(level);
-
   const role = await ensureRoleExists(guild, roleName, level);
+
   if (role && !member.roles.cache.has(role.id)) {
     await member.roles.add(role, "Initial level role");
   }
