@@ -158,6 +158,8 @@ client.on(Events.GuildMemberAdd, async (member) => {
     .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
     .setTimestamp();
   await channel.send({ embeds: [embed] });
+
+  await applyEmojiToNickname(member); // auto nickname on join
 });
 
 client.on(Events.GuildMemberRemove, async (member) => {
@@ -199,6 +201,57 @@ client.on(Events.MessageCreate, async (message) => {
     console.error('Command error:', error);
     try { await message.reply(`❌ | ${error.message}`); } catch {}
   }
+});
+
+// === AUTO NICKNAME EMOJI SYSTEM ===
+const ROLE_EMOJIS = {
+  "1427447542475657278": { emoji: "👑", color: Colors.Gold }, // Owner
+  "1427959238705025175": { emoji: "🛡️", color: Colors.Red }, // Admin
+  "1427959010111393854": { emoji: "⚔️", color: Colors.Blue }, // Moderator
+  "1427974807672328254": { emoji: "💼", color: Colors.Purple } // Midman
+};
+
+async function applyEmojiToNickname(member) {
+  if (!member.manageable) return;
+  try {
+    let foundRole = null;
+
+    for (const [roleId, data] of Object.entries(ROLE_EMOJIS)) {
+      if (member.roles.cache.has(roleId)) {
+        foundRole = data;
+        break;
+      }
+    }
+
+    if (!foundRole) return;
+
+    const baseName = member.displayName.replace(/[\p{Emoji_Presentation}\p{Emoji}\u200D]+$/u, "").trim();
+    const newNickname = `${baseName} ${foundRole.emoji}`;
+
+    if (member.displayName !== newNickname) {
+      await member.setNickname(newNickname).catch(() => {});
+      console.log(`✅ Updated nickname for ${member.user.tag}: ${newNickname}`);
+    }
+  } catch (err) {
+    console.error(`❌ Failed to apply emoji nickname for ${member.user.tag}:`, err);
+  }
+}
+
+// update all on bot start
+client.once("ready", async () => {
+  console.log("🔄 Checking and updating nicknames with emojis...");
+  for (const guild of client.guilds.cache.values()) {
+    const members = await guild.members.fetch();
+    for (const member of members.values()) {
+      await applyEmojiToNickname(member);
+    }
+  }
+  console.log("✅ Nickname emojis updated for all members!");
+});
+
+// update when roles change
+client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
+  await applyEmojiToNickname(newMember);
 });
 
 // === LOGIN ===
