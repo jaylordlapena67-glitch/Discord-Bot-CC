@@ -23,19 +23,17 @@ const LEVEL_NAMES = [
   "🌾 Legendary King"
 ];
 
-// Exponential XP scaling (big jumps for higher levels)
+// Exponential XP scaling
 function getXPForLevel(level) {
-  return Math.floor(200 * Math.pow(level, 2.7)) + 200; // more XP scaling
+  return Math.floor(200 * Math.pow(level, 2.7)) + 200;
 }
 
-// Calculate level from XP
 function getLevelForXP(xp) {
   let level = 0;
   while (xp >= getXPForLevel(level + 1)) level++;
   return level;
 }
 
-// Get role name by level
 function getRoleNameForLevel(level) {
   return LEVEL_NAMES[Math.min(level, LEVEL_NAMES.length - 1)];
 }
@@ -56,19 +54,35 @@ async function ensureRoleExistsWithHierarchy(guild, roleName, level) {
       reason: "Auto-created level-up role"
     }).catch(() => null);
   }
-
   if (!role) return null;
 
-  // maintain hierarchy (higher level = higher position)
-  const basePos = 5;
-  const targetPos = basePos + level;
-  if (role.position !== targetPos) {
+  // Arrange hierarchy
+  const botMember = await guild.members.fetchMe();
+  const botHighestPos = botMember.roles.highest.position;
+  const targetPos = botHighestPos - (LEVEL_NAMES.length - 1 - level);
+  if (role.position !== targetPos && targetPos > 0) {
     await role.setPosition(targetPos).catch(() => {});
   }
 
   return role;
 }
 
+// === Assign level role to a member ===
+async function assignLevelRole(member, xp) {
+  const level = getLevelForXP(xp);
+  const roleName = getRoleNameForLevel(level);
+  const role = await ensureRoleExistsWithHierarchy(member.guild, roleName, level);
+  if (!role) return;
+
+  const oldRoles = member.roles.cache.filter(r => LEVEL_NAMES.includes(r.name) && r.id !== role.id);
+  if (oldRoles.size > 0) await member.roles.remove(oldRoles, "Level-up role replaced");
+
+  if (!member.roles.cache.has(role.id)) {
+    await member.roles.add(role, "Level-up progression");
+  }
+}
+
+// === Export command ===
 module.exports = {
   config: {
     name: "rank",
@@ -87,26 +101,16 @@ module.exports = {
 
     let userData = (await getData(dataPath)) || { xp: 0 };
 
-    // Add XP for the sender (only for themselves)
     if (target.id === message.author.id) {
       userData.xp += XP_PER_MESSAGE;
       await setData(dataPath, userData);
     }
 
+    await assignLevelRole(await message.guild.members.fetch(userId), userData.xp);
+
     const level = getLevelForXP(userData.xp);
     const nextLevelXP = getXPForLevel(level + 1);
     const roleName = getRoleNameForLevel(level);
-
-    const member = await message.guild.members.fetch(userId).catch(() => null);
-    if (member) {
-      const role = await ensureRoleExistsWithHierarchy(message.guild, roleName, level);
-      if (role && !member.roles.cache.has(role.id)) {
-        // remove previous level roles
-        const oldRoles = member.roles.cache.filter(r => LEVEL_NAMES.includes(r.name) && r.id !== role.id);
-        if (oldRoles.size > 0) await member.roles.remove(oldRoles, "Level-up role replaced");
-        await member.roles.add(role, "Level-up progression");
-      }
-    }
 
     const embed = new EmbedBuilder()
       .setColor(Colors.Blue)
@@ -121,5 +125,17 @@ module.exports = {
       .setTimestamp();
 
     await message.channel.send({ embeds: [embed] });
+  },
+
+  // === Auto-assign all members on bot start ===
+  autoAssignAllMembers: async function(guild) {
+    const members = await guild.members.fetch();
+    for (const member of members.values()) {
+      if (member.user.bot) continue;
+      const dataPath = `xp/${guild.id}/${member.id}`;
+      let userData = (await getData(dataPath)) || { xp: 0 };
+      await assignLevelRole(member, userData.xp);
+    }
+    console.log(`✅ All members in ${guild.name} assigned level roles.`);
   }
 };
