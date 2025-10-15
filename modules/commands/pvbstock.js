@@ -77,7 +77,7 @@ module.exports = {
         const next = new Date(now);
         const restockMinutes = [1,6,11,16,21,26,31,36,41,46,51,56];
         const nextM = restockMinutes.find(min => min > m);
-        if(nextM!==undefined) next.setMinutes(nextM);
+        if(nextM !== undefined) next.setMinutes(nextM);
         else { next.setHours(next.getHours()+1); next.setMinutes(1); }
         next.setSeconds(20); next.setMilliseconds(0);
         return next;
@@ -156,7 +156,7 @@ ${ping}
         }
     },
 
-    // ✅ Convert execute to run for prefix command
+    // ✅ Prefix command entry
     async run({ message, args }) {
         const member = message.member;
         if (!member.permissions.has(PermissionsBitField.Flags.Administrator))
@@ -205,6 +205,19 @@ Next Restock (PH): ${next}
         }
     },
 
+    // ✅ Startup for prefix command handler
+    async letStart({ message, args, client }) {
+        const guildId = message.guild.id;
+        const allData = await getData("pvbstock/discord") || {};
+        const gcData = allData[guildId];
+        if(gcData?.enabled && gcData.channelId) {
+            const guild = client.guilds.cache.get(guildId);
+            const channel = guild.channels.cache.get(gcData.channelId);
+            if(channel) this.startAutoStock(channel);
+        }
+    },
+
+    // ✅ Ready event for slash/other commands
     async onReady(client) {
         const allData = await getData("pvbstock/discord") || {};
         for (const [guildId, gcData] of Object.entries(allData)) {
