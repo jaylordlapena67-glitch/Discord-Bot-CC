@@ -11,6 +11,7 @@ const client = new Client({
 });
 
 client.commands = new Collection();
+const PREFIX = "-"; // Bot prefix
 
 // XP per message
 const XP_PER_MESSAGE = 5;
@@ -31,7 +32,11 @@ const LEVEL_NAMES = [
   "🌴 Legend",
   "🪴 Sovereign",
   "🏵️ Emperor",
-  "🌾 Legendary King"
+  "🌾 Legendary King",
+  "👑 𝗢𝗪𝗡𝗘𝗥",       // Special roles start
+  "🛡️ 𝗔𝗗𝗠𝗜𝗡",
+  "🔧 𝗠𝗢𝗗𝗘𝗥𝗔𝗧𝗢𝗥",
+  "⚔️ 𝗠𝗜𝗗𝗠𝗔𝗡"
 ];
 
 // Quadratic XP growth
@@ -74,6 +79,33 @@ async function ensureRoleExistsWithHierarchy(guild, roleName, level) {
 
   return role;
 }
+
+// Special user IDs for automatic role assignment
+const OWNER_IDS = ["YOUR_OWNER_ID"];
+const ADMIN_IDS = ["YOUR_ADMIN_ID"];
+const MOD_IDS = ["YOUR_MOD_ID"];
+const MIDMAN_IDS = ["YOUR_MIDMAN_ID"];
+
+async function assignSpecialRole(member) {
+  if (OWNER_IDS.includes(member.id)) {
+    let role = await ensureRoleExistsWithHierarchy(member.guild, "👑 𝗢𝗪𝗡𝗘𝗥", 999);
+    if (role && !member.roles.cache.has(role.id)) await member.roles.add(role);
+  } else if (ADMIN_IDS.includes(member.id)) {
+    let role = await ensureRoleExistsWithHierarchy(member.guild, "🛡️ 𝗔𝗗𝗠𝗜𝗡", 998);
+    if (role && !member.roles.cache.has(role.id)) await member.roles.add(role);
+  } else if (MOD_IDS.includes(member.id)) {
+    let role = await ensureRoleExistsWithHierarchy(member.guild, "🔧 𝗠𝗢𝗗𝗘𝗥𝗔𝗧𝗢𝗥", 997);
+    if (role && !member.roles.cache.has(role.id)) await member.roles.add(role);
+  } else if (MIDMAN_IDS.includes(member.id)) {
+    let role = await ensureRoleExistsWithHierarchy(member.guild, "⚔️ 𝗠𝗜𝗗𝗠𝗔𝗡", 996);
+    if (role && !member.roles.cache.has(role.id)) await member.roles.add(role);
+  }
+}
+
+// On member join → assign special roles
+client.on("guildMemberAdd", async (member) => {
+  await assignSpecialRole(member);
+});
 
 // On message → gain XP
 client.on("messageCreate", async message => {
@@ -123,6 +155,21 @@ client.on("messageCreate", async message => {
 
   // Save XP
   await setData(dataPath, userData);
+
+  // Handle prefix commands
+  if (!message.content.startsWith(PREFIX)) return;
+
+  const args = message.content.slice(PREFIX.length).trim().split(/\s+/);
+  const commandName = args.shift().toLowerCase();
+  const command = client.commands.get(commandName);
+  if (!command) return;
+
+  try {
+    await command.letStart({ message, args });
+  } catch (err) {
+    console.error("Command error:", err);
+    await message.reply("❌ Something went wrong executing that command.");
+  }
 });
 
 // Command: -rank
