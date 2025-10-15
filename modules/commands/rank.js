@@ -1,19 +1,14 @@
-const { Client, GatewayIntentBits, EmbedBuilder } = require("discord.js");
+const {
+  Client,
+  GatewayIntentBits,
+  EmbedBuilder,
+  Events
+} = require("discord.js");
 const { setData, getData } = require("../../database.js");
 
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
-});
-
-// XP per message
 const XP_PER_MESSAGE = 5;
 
-// Styled level names with emojis
+// Role names with emojis
 const LEVEL_NAMES = [
   "🌱 Rookie",
   "🌿 Newcomer",
@@ -32,15 +27,15 @@ const LEVEL_NAMES = [
   "🌾 Legendary King"
 ];
 
-// Priority roles and their emojis
-const PRIORITY_ROLES = {
-  "Owner": "👑",
-  "Admin": "🛡️",
-  "Moderator": "🔧",
-  "Midman": "⚔️"
+// Special roles (by ID) and their emojis
+const SPECIAL_ROLES = {
+  "1427447542475657278": "👑", // Owner
+  "1427959238705025175": "🛡️", // Admin
+  "1427959010111393854": "🔰", // Moderator
+  "1427974807672328254": "⚔️"  // Midman
 };
 
-// Exponential XP growth
+// XP growth curve
 function getXPForLevel(level) {
   return Math.floor(100 * Math.pow(level, 2.5)) + 100;
 }
@@ -55,131 +50,131 @@ function getRoleNameForLevel(level) {
   return LEVEL_NAMES[Math.min(level, LEVEL_NAMES.length - 1)];
 }
 
-// Ensure role exists & hierarchy
-async function ensureRoleExistsWithHierarchy(guild, roleName, level) {
+// Create or update level role hierarchy
+async function ensureRoleExists(guild, roleName, level) {
   let role = guild.roles.cache.find(r => r.name === roleName);
   if (!role) {
     role = await guild.roles.create({
       name: roleName,
       color: "Green",
-      reason: "Level up role auto-created"
+      reason: "Level role auto-created"
     }).catch(() => null);
   }
   if (!role) return null;
 
   const basePosition = 10;
   const newPosition = basePosition + level;
-  if (role.position !== newPosition) await role.setPosition(newPosition).catch(() => {});
+  if (role.position !== newPosition) {
+    await role.setPosition(newPosition).catch(() => {});
+  }
   return role;
 }
 
-// Update nickname with priority role emojis + level emoji
-async function updateNicknameWithRoles(member, levelEmoji) {
-  let emojis = [];
-  for (const [roleName, emoji] of Object.entries(PRIORITY_ROLES)) {
-    if (member.roles.cache.some(r => r.name === roleName)) emojis.push(emoji);
+// Update nickname with emoji
+async function updateNickname(member, roleName) {
+  if (!member.manageable) return;
+
+  let newName = member.user.username;
+
+  // Add special role emoji (priority order)
+  for (const [roleId, emoji] of Object.entries(SPECIAL_ROLES)) {
+    if (member.roles.cache.has(roleId)) {
+      newName += ` ${emoji}`;
+      break;
+    }
   }
 
-  const nicknameBase = member.user.username; // use username, not current nickname
-  const newNick = `${nicknameBase} ${emojis.join("")} ${levelEmoji}`.trim().substring(0, 32); // Discord limit
-  if (member.nickname !== newNick) {
-    await member.setNickname(newNick).catch(() => {});
+  // Add level emoji
+  const levelEmoji = roleName.split(" ")[0];
+  newName += ` ${levelEmoji}`;
+
+  if (member.nickname !== newName) {
+    await member.setNickname(newName).catch(() => {});
   }
 }
 
-// On bot ready → sync all members
-client.on("ready", async () => {
-  console.log(`Logged in as ${client.user.tag}`);
-  client.guilds.cache.forEach(async guild => {
-    const members = await guild.members.fetch();
-    members.forEach(async member => {
-      const guildId = guild.id;
-      const userId = member.id;
-      const userData = (await getData(`xp/${guildId}/${userId}`)) || { xp: 0 };
-      const level = getLevelForXP(userData.xp);
-      const roleName = getRoleNameForLevel(level);
-      const levelEmoji = roleName.split(" ")[0];
+// Command
+module.exports = {
+  config: {
+    name: "rank",
+    description: "Check your level and role",
+    usage: "rank | rank <@user>",
+    cooldown: 5,
+    permission: 0,
+    usePrefix: true
+  },
 
-      const role = await ensureRoleExistsWithHierarchy(guild, roleName, level);
+  letStart: async function ({ message }) {
+    const guildId = message.guild.id;
+    const target = message.mentions.users.first() || message.author;
+    const userId = target.id;
+
+    const dataPath = `xp/${guildId}/${userId}`;
+    let userData = (await getData(dataPath)) || { xp: 0 };
+
+    // Add XP for the sender
+    if (target.id === message.author.id) {
+      userData.xp += XP_PER_MESSAGE;
+      await setData(dataPath, userData);
+    }
+
+    const level = getLevelForXP(userData.xp);
+    const roleName = getRoleNameForLevel(level);
+
+    // Update role and nickname
+    const member = await message.guild.members.fetch(userId).catch(() => null);
+    if (member) {
+      const role = await ensureRoleExists(message.guild, roleName, level);
       if (role && !member.roles.cache.has(role.id)) {
         const oldRoles = member.roles.cache.filter(r => LEVEL_NAMES.includes(r.name) && r.id !== role.id);
-        if (oldRoles.size) await member.roles.remove(oldRoles, "Level up role updated");
-        await member.roles.add(role, "Level up sync");
+        if (oldRoles.size) await member.roles.remove(oldRoles, "Level role update");
+        await member.roles.add(role, "Level up");
       }
+      await updateNickname(member, roleName);
+    }
 
-      await updateNicknameWithRoles(member, levelEmoji);
-    });
-  });
-});
+    const embed = new EmbedBuilder()
+      .setColor("Blue")
+      .setTitle(`🏆 ${target.username}'s Rank`)
+      .setDescription(`**Role:** ${roleName}\n**Level:** ${level}\n**XP:** ${userData.xp}\n**Next Level:** ${getXPForLevel(level + 1)} XP`)
+      .setTimestamp();
 
-// On message → gain XP
-client.on("messageCreate", async message => {
-  if (message.author.bot || !message.guild) return;
+    await message.channel.send({ embeds: [embed] });
+  },
 
-  const guildId = message.guild.id;
-  const userId = message.author.id;
+  // Auto-update all nicknames on restart
+  updateAllNicknames: async function (guild) {
+    const members = await guild.members.fetch();
+    for (const member of members.values()) {
+      const guildId = guild.id;
+      const userId = member.id;
+      const dataPath = `xp/${guildId}/${userId}`;
+      let userData = (await getData(dataPath)) || { xp: 0 };
+      const level = getLevelForXP(userData.xp);
+      const roleName = getRoleNameForLevel(level);
+      await ensureRoleExists(guild, roleName, level);
+      await updateNickname(member, roleName);
+    }
+  }
+};
 
+// Event: new member joins
+module.exports.onMemberJoin = async function (member) {
+  const guild = member.guild;
+  const guildId = guild.id;
+  const userId = member.id;
   const dataPath = `xp/${guildId}/${userId}`;
-  let userData = (await getData(dataPath)) || { xp: 0 };
 
-  userData.xp += XP_PER_MESSAGE;
+  let userData = (await getData(dataPath)) || { xp: 0 };
   await setData(dataPath, userData);
 
   const level = getLevelForXP(userData.xp);
   const roleName = getRoleNameForLevel(level);
-  const levelEmoji = roleName.split(" ")[0];
 
-  const member = await message.guild.members.fetch(userId).catch(() => null);
-  if (!member) return;
-
-  const role = await ensureRoleExistsWithHierarchy(message.guild, roleName, level);
+  const role = await ensureRoleExists(guild, roleName, level);
   if (role && !member.roles.cache.has(role.id)) {
-    const oldRoles = member.roles.cache.filter(r => LEVEL_NAMES.includes(r.name) && r.id !== role.id);
-    if (oldRoles.size) await member.roles.remove(oldRoles, "Level up role updated");
-    await member.roles.add(role, "Level up");
+    await member.roles.add(role, "Initial level role");
   }
 
-  await updateNicknameWithRoles(member, levelEmoji);
-});
-
-// New member joins
-client.on("guildMemberAdd", async member => {
-  const guildId = member.guild.id;
-  const userId = member.id;
-
-  const userData = (await getData(`xp/${guildId}/${userId}`)) || { xp: 0 };
-  const level = getLevelForXP(userData.xp);
-  const roleName = getRoleNameForLevel(level);
-  const levelEmoji = roleName.split(" ")[0];
-
-  const role = await ensureRoleExistsWithHierarchy(member.guild, roleName, level);
-  if (role && !member.roles.cache.has(role.id)) {
-    await member.roles.add(role, "Assign level role on join");
-  }
-
-  await updateNicknameWithRoles(member, levelEmoji);
-});
-
-// Command: -rank
-client.commands = new Map();
-client.commands.set("rank", {
-  letStart: async ({ message }) => {
-    const target = message.mentions.users.first() || message.author;
-    const guildId = message.guild.id;
-    const userId = target.id;
-
-    const userData = (await getData(`xp/${guildId}/${userId}`)) || { xp: 0 };
-    const level = getLevelForXP(userData.xp);
-    const roleName = getRoleNameForLevel(level);
-
-    const embed = new EmbedBuilder()
-      .setColor("Blue")
-      .setTitle(`🏆 ${target.tag}'s Rank`)
-      .setDescription(`**Role:** ${roleName}\n**Level:** ${level}\n**XP:** ${userData.xp}\n**XP for next level:** ${getXPForLevel(level + 1)} XP`)
-      .setTimestamp();
-
-    await message.channel.send({ embeds: [embed] });
-  }
-});
-
-module.exports = client;
+  await updateNickname(member, roleName);
+};
