@@ -1,4 +1,4 @@
-const { PermissionsBitField } = require("discord.js");
+const { PermissionsBitField, EmbedBuilder } = require("discord.js");
 const axios = require("axios");
 const { setData, getData } = require("../../database.js");
 
@@ -49,12 +49,15 @@ module.exports = {
 
     formatItems(items) {
         if (!items?.length) return "❌ Empty";
+
+        // Group by rarity
         const grouped = {};
         for (const i of items) {
             const type = this.getRarity(i.name);
             if (!grouped[type]) grouped[type] = [];
-            grouped[type].push(`• ${this.getEmoji(i.name)} ${i.name.replace(/ Seed$/i, "")} (${i.currentStock ?? "?"})`);
+            grouped[type].push(`• ${this.getEmoji(i.name)} **${i.name.replace(/ Seed$/i, "")}** (${i.currentStock ?? "?"})`);
         }
+
         const order = ["common","rare","epic","legendary","mythic","godly","secret","unknown"];
         return order.filter(cat => grouped[cat])
             .map(cat => `[${this.CATEGORY_EMOJI[cat]} ${cat.toUpperCase()}]\n${grouped[cat].join("\n")}`)
@@ -79,7 +82,8 @@ module.exports = {
         const nextM = restockMinutes.find(min => min > m);
         if(nextM!==undefined) next.setMinutes(nextM);
         else { next.setHours(next.getHours()+1); next.setMinutes(1); }
-        next.setSeconds(20); next.setMilliseconds(0);
+        next.setSeconds(20);
+        next.setMilliseconds(0);
         return next;
     },
 
@@ -96,6 +100,7 @@ module.exports = {
         const seedsText = this.formatItems(seeds);
         const gearText = this.formatItems(gear);
 
+        // Ping godly/secret items
         const specialSeeds = seeds.filter(i => {
             const rarity = this.getRarity(i.name);
             const qty = i.currentStock ?? 0;
@@ -108,20 +113,19 @@ module.exports = {
             ping = pvbrRoleIds.map(id => `<@&${id}>`).join(' ');
         }
 
-        const messageText = `
-🌱 Plants vs Brainrots Stock 🌱
-🕒 Current Time: ${now.toLocaleTimeString("en-PH",{hour12:true})}
-🕒 Next Restock: ${next.toLocaleTimeString("en-PH",{hour12:true})}
+        const embed = new EmbedBuilder()
+            .setTitle("🌱 Plants vs Brainrots Stock Update")
+            .setDescription(
+                `🕒 Current Time: **${now.toLocaleTimeString("en-PH",{hour12:true})}**\n` +
+                `🕒 Next Restock: **${next.toLocaleTimeString("en-PH",{hour12:true})}**\n\n\u200B`
+            )
+            .addFields(
+                { name: "🌿 Seeds", value: seedsText.slice(0,1024) || "❌ Empty" },
+                { name: "🛠️ Gear", value: gearText.slice(0,1024) || "❌ Empty" }
+            )
+            .setColor("Green");
 
-🌿 Seeds
-${seedsText}
-
-🛠️ Gear
-${gearText}
-
-${ping}
-        `;
-        await channel.send(messageText);
+        await channel.send({ content: ping || null, embeds: [embed] });
     },
 
     scheduleNext(channel, guildId) {
@@ -156,9 +160,7 @@ ${ping}
         }
     },
 
-    // ✅ MAIN COMMAND FUNCTION (fixed for your handler)
     async letStart({ args, message, discord }) {
-        const client = discord.client;
         const member = message.member;
         if (!member.permissions.has(PermissionsBitField.Flags.Administrator))
             return message.reply("🚫 Only **Admins** can use this command.");
@@ -196,17 +198,19 @@ ${ping}
             const location = gcData.channelId ? `<#${gcData.channelId}>` : "`None`";
             const next = this.getNextRestock().toLocaleTimeString("en-PH", { hour12: true });
 
-            const text = `
-📊 PVBR Auto-stock Status
-Status: ${status}
-Channel: ${location}
-Next Restock (PH): ${next}
-            `;
-            return message.reply(text);
+            const embed = new EmbedBuilder()
+                .setTitle("📊 PVBR Auto-stock Status")
+                .addFields(
+                    { name: "Status", value: status, inline: true },
+                    { name: "Channel", value: location, inline: true },
+                    { name: "Next Restock (PH)", value: next, inline: false }
+                )
+                .setColor("Green");
+
+            return message.reply({ embeds: [embed] });
         }
     },
 
-    // ✅ Auto resume after restart
     async onReady(client) {
         const allData = await getData("pvbstock/discord") || {};
         for (const [guildId, gcData] of Object.entries(allData)) {
