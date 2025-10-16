@@ -14,10 +14,10 @@ const config = require('./config.js');
 const { loadCommands, loadSlashCommands } = require('./utils/commandLoader');
 const loadEvents = require('./utils/eventLoader');
 const { getData, setData } = require('./database.js');
-const warnModule = require('./modules/commands/warning.js'); // auto warning
-const xpModule = require('./modules/commands/rank.js'); // rank/xp module
+const warnModule = require('./modules/commands/warning.js');
+const xpModule = require('./modules/commands/rank.js');
 
-// === CLIENT ===
+// === CLIENT SETUP ===
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -31,13 +31,13 @@ const client = new Client({
 
 client.commands = new Collection();
 client.slashCommands = new Collection();
+client.events = new Map();
 
-// === CHANNELS ===
+// === CHANNELS & ROLES ===
 const GAG_CHANNEL_ID = "1426904612861902868";
 const PVB_CHANNEL_ID = "1426904690343284847";
 const ROLE_CHANNELS = [GAG_CHANNEL_ID, PVB_CHANNEL_ID];
 
-// === ROLE IDS ===
 const roleMap = {
   secret_role: '1427517229129404477',
   godly_role: '1427517104780869713',
@@ -48,7 +48,7 @@ const roleMap = {
 
 const PANEL_MARKER = '🎭 **Choose a role below:**';
 
-// === BUTTON BUILDER (all green) ===
+// === HELPER FUNCTIONS ===
 function buildButtonsForChannel(channelId) {
   const row = new ActionRowBuilder();
   const BUTTON_STYLE = ButtonStyle.Success;
@@ -68,7 +68,6 @@ function buildButtonsForChannel(channelId) {
   return row;
 }
 
-// === SEND PANEL TO CHANNEL ===
 async function sendPanelToChannel(channel) {
   try {
     const row = buildButtonsForChannel(channel.id);
@@ -79,14 +78,13 @@ async function sendPanelToChannel(channel) {
   }
 }
 
-// === ENSURE PANEL EXISTS ===
 async function ensurePanelInChannel(channel) {
   const msgs = await channel.messages.fetch({ limit: 50 }).catch(() => null);
   const existing = msgs?.find(m => m.content?.includes(PANEL_MARKER));
   if (!existing) await sendPanelToChannel(channel);
 }
 
-// === READY ===
+// === READY EVENT ===
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
@@ -110,32 +108,24 @@ client.once('ready', async () => {
 
   console.log('🔁 Role panel auto-check active (5m).');
 
-  // auto assign level roles on bot start
+  // auto assign level roles
   for (const guild of client.guilds.cache.values()) {
     await xpModule.autoAssignAllMembers(guild);
   }
 
-  // ✅ Resume PVBR stock auto feature
+  // resume PVBR stock
   const pvbstock = client.commands.get("pvbstock");
-  if (pvbstock?.onReady) {
-    await pvbstock.onReady(client);
-    console.log("🌱 PVBR auto-stock resumed for all guilds.");
-  }
+  if (pvbstock?.onReady) await pvbstock.onReady(client);
 
-  // ✅ Resume GAG stock auto feature
+  // resume GAG stock
   const gagstock = client.commands.get("gagstock");
-  if (gagstock?.onReady) {
-    await gagstock.onReady(client);
-    console.log("🌱 GAG auto-stock resumed for all guilds.");
-  }
+  if (gagstock?.onReady) await gagstock.onReady(client);
 
-  // update all nicknames on ready
+  // update nicknames with emojis
   console.log("🔄 Checking and updating nicknames with emojis...");
   for (const guild of client.guilds.cache.values()) {
     const members = await guild.members.fetch();
-    for (const member of members.values()) {
-      await applyHighestRoleEmoji(member);
-    }
+    for (const member of members.values()) await applyHighestRoleEmoji(member);
   }
   console.log("✅ Nickname emojis updated for all members!");
 });
@@ -174,7 +164,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 // === WELCOME / GOODBYE CHANNELS ===
 const WELCOME_CHANNEL = '1427870606660997192';
 const GOODBYE_CHANNEL = '1427870731508781066';
-const LOG_CHANNEL_ID = '1426904103534985317'; // nickname logs
+const LOG_CHANNEL_ID = '1426904103534985317';
 
 client.on(Events.GuildMemberAdd, async (member) => {
   const channel = member.guild.channels.cache.get(WELCOME_CHANNEL);
@@ -210,14 +200,10 @@ client.on(Events.MessageCreate, async (message) => {
 
   const wflRegex = /\b(?:win\s*or\s*lose|win\s*lose|w[\s\/\.\-]*f[\s\/\.\-]*l)\b/i;
   if (wflRegex.test(message.content)) {
-    try {
-      await message.react('🇼');
-      await message.react('🇫');
-      await message.react('🇱');
-    } catch (err) { console.error('Error reacting WFL:', err); }
+    try { await message.react('🇼'); await message.react('🇫'); await message.react('🇱'); } catch {}
   }
 
-  try { await warnModule.handleEvent({ message }); } catch (err) { console.error('Auto-warning error:', err); }
+  try { await warnModule.handleEvent({ message }); } catch (err) { console.error(err); }
 
   const prefix = config.prefix;
   if (!message.content.startsWith(prefix)) return;
@@ -226,17 +212,13 @@ client.on(Events.MessageCreate, async (message) => {
   const command = client.commands.get(commandName) || client.commands.find(cmd => cmd.config?.aliases?.includes(commandName));
   if (!command) return;
 
-  try { await command.letStart({ args, message, discord: { client } }); } catch (error) {
-    console.error('Command error:', error);
-    try { await message.reply(`❌ | ${error.message}`); } catch {}
-  }
+  try { await command.letStart({ args, message, discord: { client } }); } catch (error) { console.error(error); }
 });
 
-// === AUTO NICKNAME EMOJI SYSTEM (HIGHEST ROLE) ===
+// === NICKNAME EMOJI SYSTEM ===
 function extractEmojis(text) {
   if (!text) return [];
-  const emojiRegex = /([\p{Emoji_Presentation}\p{Emoji}\u200D]+)/gu;
-  return text.match(emojiRegex) || [];
+  return text.match(/([\p{Emoji_Presentation}\p{Emoji}\u200D]+)/gu) || [];
 }
 
 async function applyHighestRoleEmoji(member) {
@@ -248,14 +230,11 @@ async function applyHighestRoleEmoji(member) {
 
     const topRole = rolesWithEmoji.first();
     const emoji = topRole ? extractEmojis(topRole.name)[0] : "";
-
     const baseName = member.displayName.replace(/[\p{Emoji_Presentation}\p{Emoji}\u200D]+/gu, "").trim();
     const newNickname = emoji ? `${baseName} ${emoji}` : baseName;
 
     if (member.displayName !== newNickname) {
       await member.setNickname(newNickname).catch(() => {});
-      console.log(`✅ Updated nickname for ${member.user.tag}: ${newNickname}`);
-
       const logChannel = member.guild.channels.cache.get(LOG_CHANNEL_ID);
       if (logChannel) {
         const embed = new EmbedBuilder()
@@ -271,7 +250,7 @@ async function applyHighestRoleEmoji(member) {
   }
 }
 
-client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
+client.on(Events.GuildMemberUpdate, async (_, newMember) => {
   await applyHighestRoleEmoji(newMember);
 });
 
