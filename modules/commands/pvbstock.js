@@ -101,8 +101,8 @@ module.exports = {
 
         // Map rarity to role ID
         const RARITY_ROLES = {
-            "godly": "1427517229129404477",
-            "secret": "1427517104780869713"
+            "godly": "1427517104780869713",
+            "secret": "1427517229129404477"
         };
 
         // Base sa MANUAL_RARITY, determine ping roles
