@@ -134,7 +134,7 @@ client.once('ready', async () => {
   for (const guild of client.guilds.cache.values()) {
     const members = await guild.members.fetch();
     for (const member of members.values()) {
-      await applyEmojiToNickname(member);
+      await applyHighestRoleEmoji(member);
     }
   }
   console.log("✅ Nickname emojis updated for all members!");
@@ -174,6 +174,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 // === WELCOME / GOODBYE CHANNELS ===
 const WELCOME_CHANNEL = '1427870606660997192';
 const GOODBYE_CHANNEL = '1427870731508781066';
+const LOG_CHANNEL_ID = '1426904103534985317'; // nickname logs
 
 client.on(Events.GuildMemberAdd, async (member) => {
   const channel = member.guild.channels.cache.get(WELCOME_CHANNEL);
@@ -188,7 +189,7 @@ client.on(Events.GuildMemberAdd, async (member) => {
     await channel.send({ embeds: [embed] });
   }
 
-  await applyEmojiToNickname(member);
+  await applyHighestRoleEmoji(member);
   await xpModule.assignLevelRole(member, 0);
 });
 
@@ -231,40 +232,47 @@ client.on(Events.MessageCreate, async (message) => {
   }
 });
 
-// === AUTO NICKNAME EMOJI SYSTEM ===
-const ROLE_EMOJIS = {
-  "1427447542475657278": { emoji: "👑", color: Colors.Gold }, // Owner
-  "1427959238705025175": { emoji: "🛡️", color: Colors.Red }, // Admin
-  "1427959010111393854": { emoji: "⚔️", color: Colors.Blue }, // Moderator
-  "1427974807672328254": { emoji: "💼", color: Colors.Purple } // Midman
-};
+// === AUTO NICKNAME EMOJI SYSTEM (HIGHEST ROLE) ===
+function extractEmojis(text) {
+  if (!text) return [];
+  const emojiRegex = /([\p{Emoji_Presentation}\p{Emoji}\u200D]+)/gu;
+  return text.match(emojiRegex) || [];
+}
 
-async function applyEmojiToNickname(member) {
+async function applyHighestRoleEmoji(member) {
   if (!member.manageable) return;
   try {
-    let foundRole = null;
-    for (const [roleId, data] of Object.entries(ROLE_EMOJIS)) {
-      if (member.roles.cache.has(roleId)) {
-        foundRole = data;
-        break;
-      }
-    }
-    if (!foundRole) return;
+    const rolesWithEmoji = member.roles.cache
+      .filter(role => extractEmojis(role.name).length > 0)
+      .sort((a, b) => b.position - a.position);
 
-    const baseName = member.displayName.replace(/[\p{Emoji_Presentation}\p{Emoji}\u200D]+$/u, "").trim();
-    const newNickname = `${baseName} ${foundRole.emoji}`;
+    const topRole = rolesWithEmoji.first();
+    const emoji = topRole ? extractEmojis(topRole.name)[0] : "";
+
+    const baseName = member.displayName.replace(/[\p{Emoji_Presentation}\p{Emoji}\u200D]+/gu, "").trim();
+    const newNickname = emoji ? `${baseName} ${emoji}` : baseName;
+
     if (member.displayName !== newNickname) {
       await member.setNickname(newNickname).catch(() => {});
       console.log(`✅ Updated nickname for ${member.user.tag}: ${newNickname}`);
+
+      const logChannel = member.guild.channels.cache.get(LOG_CHANNEL_ID);
+      if (logChannel) {
+        const embed = new EmbedBuilder()
+          .setColor(Colors.Blue)
+          .setTitle("🪄 Nickname Updated")
+          .setDescription(`**Member:** ${member.user.tag}\n**New Nickname:** ${newNickname}\n**Top Role:** ${topRole ? topRole.name : "None"}`)
+          .setTimestamp();
+        logChannel.send({ embeds: [embed] }).catch(() => {});
+      }
     }
   } catch (err) {
     console.error(`❌ Failed to apply emoji nickname for ${member.user.tag}:`, err);
   }
 }
 
-// update nickname emojis on role update
 client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
-  await applyEmojiToNickname(newMember);
+  await applyHighestRoleEmoji(newMember);
 });
 
 // === LOGIN ===
