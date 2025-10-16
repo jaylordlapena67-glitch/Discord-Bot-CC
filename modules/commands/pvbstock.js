@@ -50,7 +50,6 @@ module.exports = {
     formatItems(items) {
         if (!items?.length) return "❌ Empty";
 
-        // Group by rarity
         const grouped = {};
         for (const i of items) {
             const type = this.getRarity(i.name);
@@ -100,18 +99,27 @@ module.exports = {
         const seedsText = this.formatItems(seeds);
         const gearText = this.formatItems(gear);
 
-        // Ping godly/secret items
+        // Map rarity to role ID
+        const RARITY_ROLES = {
+            "godly": "1427517229129404477",
+            "secret": "1427517104780869713"
+        };
+
+        // Find special seeds that need pings
         const specialSeeds = seeds.filter(i => {
             const rarity = this.getRarity(i.name);
             const qty = i.currentStock ?? 0;
             return (rarity === "godly" || rarity === "secret") && qty > 0;
         });
 
-        let ping = "";
-        if (specialSeeds.length > 0) {
-            const pvbrRoleIds = ['1427517229129404477','1427517104780869713'];
-            ping = pvbrRoleIds.map(id => `<@&${id}>`).join(' ');
-        }
+        // Only ping the correct role(s) based on rarity
+        const pingRoles = specialSeeds
+            .map(i => RARITY_ROLES[this.getRarity(i.name)])
+            .filter(Boolean);
+
+        const ping = [...new Set(pingRoles)]
+            .map(id => `<@&${id}>`)
+            .join(' ');
 
         const embed = new EmbedBuilder()
             .setTitle("🌱 Plants vs Brainrots Stock Update")
