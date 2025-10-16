@@ -111,7 +111,6 @@ module.exports = {
         )
         .setColor("Green");
 
-      // Ping special roles if rare items appear
       const allItems = [...gearItems, ...seedItems, ...eggItems];
       const specialPings = [];
 
@@ -198,32 +197,34 @@ module.exports = {
     if (action === "check") {
       const status = gcData.enabled ? "✅ Enabled" : "❌ Disabled";
       const location = gcData.channelId ? `<#${gcData.channelId}>` : "None";
-const next = this.getNextAligned().toLocaleTimeString("en-PH", { hour12: true });
+      const next = this.getNextAligned().toLocaleTimeString("en-PH", { hour12: true });
 
-const embed = new EmbedBuilder()
-  .setTitle("📊 Grow A Garden Auto-stock Status")
-  .addFields(
-    { name: "Status", value: status, inline: true },
-    { name: "Channel", value: location, inline: true },
-    { name: "Next Restock (PH)", value: next, inline: false }
-  )
-  .setColor("Green");
+      const embed = new EmbedBuilder()
+        .setTitle("📊 Grow A Garden Auto-stock Status")
+        .addFields(
+          { name: "Status", value: status, inline: true },
+          { name: "Channel", value: location, inline: true },
+          { name: "Next Restock (PH)", value: next, inline: false }
+        )
+        .setColor("Green");
 
-return message.reply({ embeds: [embed] });
-},
+      return message.reply({ embeds: [embed] });
+    }
+  },
 
-async onReady(client) {
-  const allData = await getData("gagstock/discord") || {};
-  for (const [guildId, gcData] of Object.entries(allData)) {
-    if (gcData.enabled && gcData.channelId) {
-      const guild = client.guilds.cache.get(guildId);
-      if (!guild) continue;
+  async onReady(client) {
+    const allData = await getData("gagstock/discord") || {};
+    for (const [guildId, gcData] of Object.entries(allData)) {
+      if (gcData.enabled && gcData.channelId) {
+        const guild = client.guilds.cache.get(guildId);
+        if (!guild) continue;
 
-      const channel = guild.channels.cache.get(gcData.channelId);
-      if (channel) {
-        this.startAutoStock(channel);
-        console.log(`🔁 Auto-stock resumed for guild ${guild.name}`);
+        const channel = guild.channels.cache.get(gcData.channelId);
+        if (channel) {
+          this.startAutoStock(channel);
+          console.log(`🔁 Auto-stock resumed for guild ${guild.name}`);
+        }
       }
     }
   }
-}
+};
