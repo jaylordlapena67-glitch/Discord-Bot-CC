@@ -27,7 +27,7 @@ module.exports = {
     "Crimson Thorn": "🌹"
   },
 
-  SPECIAL_ITEMS: ["grandmaster sprinkler", "great pumpkin", "level up lollipop"],
+  SPECIAL_ITEMS: ["grandmaster sprinkler", "great pumpkin", "level-up lollipop"],
 
   SPECIAL_ITEM_ROLES: {
     "grandmaster sprinkler": "1427560078411563059",
