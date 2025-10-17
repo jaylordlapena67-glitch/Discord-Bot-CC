@@ -147,18 +147,39 @@ module.exports = {
 
     const ping = pingRoles.map((id) => `<@&${id}>`).join(" ");
 
+    const specialStock = seeds.some(
+      (i) =>
+        ["godly", "secret"].includes(this.getRarity(i.name)) &&
+        (i.currentStock ?? 0) > 0
+    );
+
+    const privateServerChannelId = "1426903128565088357";
+
     const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
+
+    // Build embed description
+    let description = `🕒 Current Time: **${now.toLocaleTimeString("en-PH", { hour12: true })}**\n\n`;
+    description += `🌿 **Seeds:**\n${seedsText.slice(0, 1024) || "❌ Empty"}\n\n`;
+    description += `🛠️ **Gear:**\n${gearText.slice(0, 1024) || "❌ Empty"}`;
+
+    // Add special stock + private server info at the bottom
+    if (specialStock) {
+      const specialItems = seeds
+        .filter(i => ["godly", "secret"].includes(this.getRarity(i.name)) && (i.currentStock ?? 0) > 0)
+        .map(i => `• ${this.getEmoji(i.name)} **${i.name.replace(/ Seed$/i, "")}** (${i.currentStock ?? "?"})`)
+        .join("\n");
+
+      description += `\n\n🎉 **Special Stock:**\n${specialItems}`;
+      description += `\n\n🚀 Join fast! Here's the list of private server:\n<#${privateServerChannelId}>`;
+    }
 
     const embed = new EmbedBuilder()
       .setTitle("🌱 Plants vs Brainrots Stock Update")
-      .setDescription(`🕒 Current Time: **${now.toLocaleTimeString("en-PH", { hour12: true })}**`)
-      .addFields(
-        { name: "🌿 Seeds", value: seedsText.slice(0, 1024) || "❌ Empty" },
-        { name: "🛠️ Gear", value: gearText.slice(0, 1024) || "❌ Empty" }
-      )
+      .setDescription(description)
       .setColor("Green");
 
     await channel.send({ content: ping || null, embeds: [embed] });
+
     lastUpdatedAt = updatedAt;
   },
 
@@ -232,12 +253,10 @@ module.exports = {
     console.log("🔁 PVBR module ready — fetching latest stock timestamp...");
 
     try {
-      // Fetch latest updatedAt immediately
       const { updatedAt } = await this.fetchPVBRStock();
       if (updatedAt) lastUpdatedAt = updatedAt;
       console.log("✅ LastUpdatedAt set to:", lastUpdatedAt);
 
-      // Start loop to check every 1 second
       setInterval(async () => {
         for (const guild of client.guilds.cache.values()) {
           await this.checkForUpdate(client);
