@@ -238,50 +238,32 @@ module.exports = {
       if (stockData.updatedAt) lastUpdatedAt = stockData.updatedAt;
       console.log("✅ LastUpdatedAt set to:", lastUpdatedAt);
 
-      // === ALIGNED LOOP ===
-      (async function alignedCheckLoop() {
-        while (true) {
-          const next = new Date();
-          const minute = next.getMinutes();
-          const nextMinute = Math.ceil(minute / 5) * 5;
-          next.setMinutes(nextMinute === 60 ? 0 : nextMinute, 0, 0);
-          if (nextMinute === 60) next.setHours(next.getHours() + 1);
+      // === CLEAN ALIGNED LOOP (no spam) ===
+      while (true) {
+        // wait until next 5-minute mark
+        const now = new Date();
+        const minute = now.getMinutes();
+        const nextMinute = Math.ceil(minute / 5) * 5;
+        const next = new Date(now);
+        next.setMinutes(nextMinute === 60 ? 0 : nextMinute, 0, 0);
+        if (nextMinute === 60) next.setHours(now.getHours() + 1);
 
-          const delay = next.getTime() - Date.now();
-          console.log(`⏳ Waiting until ${next.toLocaleTimeString()} to start stock check...`);
-          await new Promise((res) => setTimeout(res, delay));
+        const delay = next.getTime() - Date.now();
+        console.log(`⏳ Waiting until ${next.toLocaleTimeString()} to start PVBR check...`);
+        await new Promise(res => setTimeout(res, delay));
 
-          console.log(`🕒 Aligned check started (${new Date().toLocaleTimeString()})`);
-
-          let sentThisCycle = false;
-          const start = Date.now();
-
-          const checkInterval = setInterval(async () => {
-            const diff = (Date.now() - start) / 1000;
-
-            try {
-              // Check PVBR stock
-              const pvbChanged = await module.exports.checkForUpdate(client);
-
-              // If stock changed and not yet sent, send and stop interval
-              if (pvbChanged && !sentThisCycle) {
-                sentThisCycle = true;
-                clearInterval(checkInterval);
-                console.log("✅ PVBR stock updated — notifications sent!");
-              }
-
-              // Safety: stop interval after 4 minutes even if nothing changed
-              if (diff > 240 && !sentThisCycle) {
-                clearInterval(checkInterval);
-                console.log("⌛ No stock update found — waiting for next aligned time.");
-              }
-            } catch (err) {
-              console.error("❌ Error during aligned stock check:", err);
-              clearInterval(checkInterval);
-            }
-          }, 1000); // check every 1 second
+        console.log(`🕒 Checking PVBR stock at ${new Date().toLocaleTimeString()}...`);
+        try {
+          const changed = await this.checkForUpdate(client);
+          if (changed) {
+            console.log("✅ PVBR stock updated — message sent.");
+          } else {
+            console.log("⌛ No update detected this cycle.");
+          }
+        } catch (err) {
+          console.error("❌ Error during PVBR checkForUpdate:", err);
         }
-      })();
+      }
     } catch (err) {
       console.error("❌ Error initializing PVBR aligned loop:", err);
     }
