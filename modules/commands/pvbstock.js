@@ -40,17 +40,6 @@ module.exports = {
     "Carrot Launcher": "🥕🚀",
   },
 
-  CATEGORY_EMOJI: {
-    common: "🟢",
-    rare: "🌿",
-    epic: "🔵",
-    legendary: "🟣",
-    mythic: "✨",
-    godly: "🟡",
-    secret: "🎩",
-    unknown: "❔",
-  },
-
   MANUAL_RARITY: {
     Cactus: "rare",
     Strawberry: "rare",
@@ -85,35 +74,6 @@ module.exports = {
     return this.ITEM_EMOJI[name.replace(/ Seed$/i, "")] || "❔";
   },
 
-  formatItems(items) {
-    if (!items?.length) return "❌ Empty";
-    const grouped = {};
-    for (const i of items) {
-      const type = this.getRarity(i.name);
-      if (!grouped[type]) grouped[type] = [];
-      grouped[type].push(
-        `• ${this.getEmoji(i.name)} **${i.name.replace(/ Seed$/i, "")}** (${i.currentStock ?? "?"})`
-      );
-    }
-    const order = [
-      "common",
-      "rare",
-      "epic",
-      "legendary",
-      "mythic",
-      "godly",
-      "secret",
-      "unknown",
-    ];
-    return order
-      .filter((cat) => grouped[cat])
-      .map(
-        (cat) =>
-          `[${this.CATEGORY_EMOJI[cat]} ${cat.toUpperCase()}]\n${grouped[cat].join("\n")}`
-      )
-      .join("\n\n");
-  },
-
   async fetchPVBRStock() {
     try {
       const res = await axios.get("https://plantsvsbrainrotsstocktracker.com/api/stock?since=0");
@@ -128,64 +88,66 @@ module.exports = {
     const { items, updatedAt } = await this.fetchPVBRStock();
     if (!items?.length) return channel.send("⚠️ Failed to fetch PVBR stock.");
 
+    // Split between seeds and gear
     const seeds = items.filter((i) => i.name.toLowerCase().includes("seed"));
     const gear = items.filter((i) => !i.name.toLowerCase().includes("seed"));
 
-    const seedsText = this.formatItems(seeds);
-    const gearText = this.formatItems(gear);
+    // Format time (Manila timezone)
+    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
+    const timeString = now.toLocaleTimeString("en-PH", { hour12: true, hour: "2-digit", minute: "2-digit" });
 
+    // Format lists
+    const formatList = (list) =>
+      list.length
+        ? list
+            .map((i) => `${this.getEmoji(i.name)} **${i.name.replace(/ Seed$/i, "")}** x${i.currentStock ?? "?"}`)
+            .join("\n")
+        : "❌ Empty";
+
+    const seedsText = formatList(seeds);
+    const gearText = formatList(gear);
+
+    // Detect rare stock for ping
     const RARITY_ROLES = {
       godly: "1427517104780869713",
       secret: "1427517229129404477",
     };
 
     const pingRoles = [];
-    if (seeds.some((i) => this.getRarity(i.name) === "godly" && (i.currentStock ?? 0) > 0))
-      pingRoles.push(RARITY_ROLES.godly);
-    if (seeds.some((i) => this.getRarity(i.name) === "secret" && (i.currentStock ?? 0) > 0))
-      pingRoles.push(RARITY_ROLES.secret);
+    const specialItems = [];
 
-    const ping = pingRoles.map((id) => `<@&${id}>`).join(" ");
-
-    const specialStock = seeds.some(
-      (i) =>
-        ["godly", "secret"].includes(this.getRarity(i.name)) &&
-        (i.currentStock ?? 0) > 0
-    );
-
-    const privateServerChannelId = "1426903128565088357";
-
-    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
-
-    // Build embed description
-    let description = `🕒 Current Time: **${now.toLocaleTimeString("en-PH", { hour12: true })}**\n\n`;
-    description += `🌿 **Seeds:**\n${seedsText.slice(0, 1024) || "❌ Empty"}\n\n`;
-    description += `🛠️ **Gear:**\n${gearText.slice(0, 1024) || "❌ Empty"}`;
-
-    // Add special stock + private server info at the bottom
-    if (specialStock) {
-      const specialItems = seeds
-        .filter(i => ["godly", "secret"].includes(this.getRarity(i.name)) && (i.currentStock ?? 0) > 0)
-        .map(i => `• ${this.getEmoji(i.name)} **${i.name.replace(/ Seed$/i, "")}** (${i.currentStock ?? "?"})`)
-        .join("\n");
-
-      description += `\n\n🎉 **Special Stock:**\n${specialItems}`;
-      description += `\n\n🚀 Join fast! Here's the list of private server:\n<#${privateServerChannelId}>`;
+    for (const i of seeds) {
+      const rarity = this.getRarity(i.name);
+      if (["godly", "secret"].includes(rarity) && (i.currentStock ?? 0) > 0) {
+        specialItems.push(i);
+        if (rarity === "godly") pingRoles.push(RARITY_ROLES.godly);
+        if (rarity === "secret") pingRoles.push(RARITY_ROLES.secret);
+      }
     }
 
-    const embed = new EmbedBuilder()
-      .setTitle("🌱 Plants vs Brainrots Stock Update")
-      .setDescription(description)
-      .setColor("Green");
+    const ping = [...new Set(pingRoles)].map((id) => `<@&${id}>`).join(" ");
+    const specialMentions = specialItems.map((i) => `@${i.name.replace(/ Seed$/i, "")}`).join(" ");
 
-    await channel.send({ content: ping || null, embeds: [embed] });
+    // Build embed body
+    let description = `**Seeds**\n${seedsText}\n\n**Gear**\n${gearText}`;
+
+    const embed = new EmbedBuilder()
+      .setTitle(`Plants vs Brainrots Stock – ${timeString}`)
+      .setDescription(description)
+      .setColor("#FF69B4"); // pink border (like screenshot)
+
+    await channel.send({
+      content: [specialMentions || null, ping || null].filter(Boolean).join(" "),
+      embeds: [embed],
+    });
 
     lastUpdatedAt = updatedAt;
   },
 
   async checkForUpdate(client) {
     try {
-      const channelId = (await getData("pvbstock/discord"))?.[client.guilds.cache.first().id]?.channelId;
+      const guild = client.guilds.cache.first();
+      const channelId = (await getData("pvbstock/discord"))?.[guild.id]?.channelId;
       if (!channelId) return false;
 
       const channel = await client.channels.fetch(channelId).catch(() => null);
@@ -257,6 +219,7 @@ module.exports = {
       if (updatedAt) lastUpdatedAt = updatedAt;
       console.log("✅ LastUpdatedAt set to:", lastUpdatedAt);
 
+      // Check every second for new restock
       setInterval(async () => {
         for (const guild of client.guilds.cache.values()) {
           await this.checkForUpdate(client);
