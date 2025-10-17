@@ -20,7 +20,7 @@ module.exports = {
 		// Read the prefix directly from config.json
 		let prefix = '-';
 		try {
-			const configData = fs.readFileSync('./config.json', 'utf8');
+			const configData = fs.readFileSync('./config.js', 'utf8');
 			const config = JSON.parse(configData);
 			prefix = config.prefix || '-';
 		} catch (err) {
