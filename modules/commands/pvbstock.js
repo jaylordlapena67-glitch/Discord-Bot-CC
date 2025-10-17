@@ -132,7 +132,7 @@ module.exports = {
       embeds: [embed],
     });
 
-    // ✅ Add 🇼 and 🇱 reactions (like in screenshot)
+    // ✅ Add 🇼 and 🇱 reactions
     try {
       await msg.react("🇼");
       await msg.react("🇱");
@@ -205,24 +205,17 @@ module.exports = {
           { name: "Status", value: status, inline: true },
           { name: "Channel", value: location, inline: true }
         )
-        .setColor("Green");
+        .setColor("#FF69B4");
       return message.reply({ embeds: [embed] });
     }
   },
 
   async onReady(client) {
     console.log("🔁 PVBR module ready — fetching latest stock timestamp...");
-
     try {
       const { updatedAt } = await this.fetchPVBRStock();
       if (updatedAt) lastUpdatedAt = updatedAt;
       console.log("✅ LastUpdatedAt set to:", lastUpdatedAt);
-
-      setInterval(async () => {
-        for (const guild of client.guilds.cache.values()) {
-          await this.checkForUpdate(client);
-        }
-      }, 1000);
     } catch (err) {
       console.error("❌ Error initializing PVBR loop:", err);
     }
