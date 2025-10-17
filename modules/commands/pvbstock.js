@@ -92,9 +92,7 @@ module.exports = {
       const type = this.getRarity(i.name);
       if (!grouped[type]) grouped[type] = [];
       grouped[type].push(
-        `• ${this.getEmoji(i.name)} **${i.name.replace(/ Seed$/i, "")}** (${
-          i.currentStock ?? "?"
-        })`
+        `• ${this.getEmoji(i.name)} **${i.name.replace(/ Seed$/i, "")}** (${i.currentStock ?? "?"})`
       );
     }
     const order = [
@@ -111,18 +109,14 @@ module.exports = {
       .filter((cat) => grouped[cat])
       .map(
         (cat) =>
-          `[${this.CATEGORY_EMOJI[cat]} ${cat.toUpperCase()}]\n${grouped[
-            cat
-          ].join("\n")}`
+          `[${this.CATEGORY_EMOJI[cat]} ${cat.toUpperCase()}]\n${grouped[cat].join("\n")}`
       )
       .join("\n\n");
   },
 
   async fetchPVBRStock() {
     try {
-      const res = await axios.get(
-        "https://plantsvsbrainrotsstocktracker.com/api/stock?since=0"
-      );
+      const res = await axios.get("https://plantsvsbrainrotsstocktracker.com/api/stock?since=0");
       return res.data || {};
     } catch (e) {
       console.error("Error fetching PVBR stock:", e);
@@ -162,10 +156,7 @@ module.exports = {
         { name: "🌿 Seeds", value: seedsText.slice(0, 1024) || "❌ Empty" },
         { name: "🛠️ Gear", value: gearText.slice(0, 1024) || "❌ Empty" }
       )
-      .setColor("Green")
-      .setFooter({
-        text: `Last Updated: ${updatedAt ? new Date(updatedAt).toLocaleTimeString("en-PH", { hour12: true }) : "?"}`,
-      });
+      .setColor("Green");
 
     await channel.send({ content: ping || null, embeds: [embed] });
     lastUpdatedAt = updatedAt;
