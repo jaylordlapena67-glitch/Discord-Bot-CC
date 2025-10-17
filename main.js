@@ -46,6 +46,7 @@ const roleMap = {
 };
 
 const PANEL_MARKER = '🎭 **Choose a role below:**';
+const LOG_CHANNEL_ID = '1426904103534985317';
 
 // === HELPER FUNCTIONS ===
 function buildButtonsForChannel(channelId) {
@@ -101,23 +102,29 @@ async function waitUntilNextAligned() {
   await new Promise(res => setTimeout(res, delay));
 }
 
-// === EMOJI NICKNAME ===
+// === EMOJI DETECTION & NICKNAME LOGIC ===
 function extractEmojis(text) {
   if (!text) return [];
-  return text.match(/([\p{Emoji_Presentation}\p{Emoji}\u200D]+)/gu) || [];
+  // Detect all emojis at the start of the role name
+  const match = text.match(/^([\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F]+)/u);
+  return match ? [...match[0]] : [];
 }
 
 async function applyHighestRoleEmoji(member) {
   if (!member.manageable) return;
   try {
+    // Find topmost role that starts with emojis
     const rolesWithEmoji = member.roles.cache
       .filter(role => extractEmojis(role.name).length > 0)
       .sort((a, b) => b.position - a.position);
 
     const topRole = rolesWithEmoji.first();
-    const emoji = topRole ? extractEmojis(topRole.name)[0] : "";
-    const baseName = member.displayName.replace(/[\p{Emoji_Presentation}\p{Emoji}\u200D]+/gu, "").trim();
-    const newNickname = emoji ? `${baseName} ${emoji}` : baseName;
+    const emojis = topRole ? extractEmojis(topRole.name).slice(0, 2) : []; // max 2 emojis
+    const emojiSuffix = emojis.length > 0 ? ` ${emojis.join('')}` : '';
+
+    // Remove existing emojis before appending new ones
+    const baseName = member.displayName.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F]+/gu, "").trim();
+    const newNickname = `${baseName}${emojiSuffix}`;
 
     if (member.displayName !== newNickname) {
       await member.setNickname(newNickname).catch(() => {});
@@ -170,14 +177,12 @@ client.once('ready', async () => {
   (async function alignedCheckLoop() {
     while (true) {
       await waitUntilNextAligned();
-
       console.log(`🕒 Aligned check started (${new Date().toLocaleTimeString()})`);
 
       const start = Date.now();
       let updated = false;
       const checkInterval = setInterval(async () => {
         const diff = (Date.now() - start) / 1000;
-
         if (pvbstock?.checkForUpdate && gagstock?.checkForUpdate) {
           const pvbChanged = await pvbstock.checkForUpdate(client);
           const gagChanged = await gagstock.checkForUpdate(client);
@@ -187,7 +192,6 @@ client.once('ready', async () => {
             console.log("✅ Stock updated — notifications sent!");
           }
         }
-
         if (diff > 240 && !updated) {
           console.log("⌛ No stock update found — waiting for next aligned time.");
           clearInterval(checkInterval);
@@ -230,6 +234,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await member.roles.add(roleId, 'Toggled via panel');
       await interaction.reply({ content: `✅ Added <@&${roleId}> to you.`, ephemeral: true });
     }
+    await applyHighestRoleEmoji(member);
   } catch (err) {
     console.error('Role toggle error:', err);
     await interaction.reply({ content: '❌ Failed to toggle role.', ephemeral: true });
@@ -239,7 +244,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
 // === WELCOME / GOODBYE ===
 const WELCOME_CHANNEL = '1427870606660997192';
 const GOODBYE_CHANNEL = '1427870731508781066';
-const LOG_CHANNEL_ID = '1426904103534985317';
 
 client.on(Events.GuildMemberAdd, async (member) => {
   const channel = member.guild.channels.cache.get(WELCOME_CHANNEL);
@@ -253,7 +257,6 @@ client.on(Events.GuildMemberAdd, async (member) => {
       .setTimestamp();
     await channel.send({ embeds: [embed] });
   }
-
   await applyHighestRoleEmoji(member);
 });
 
