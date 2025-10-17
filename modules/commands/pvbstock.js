@@ -124,7 +124,6 @@ module.exports = {
     }
   },
 
-  // ✅ EMBED STYLE IDENTICAL TO YOUR SCREENSHOT
   async sendStock(channel) {
     const { items, updatedAt } = await this.fetchPVBRStock();
     if (!items?.length) return channel.send("⚠️ Failed to fetch PVBR stock.");
@@ -161,7 +160,6 @@ module.exports = {
       minute: "2-digit",
     });
 
-    // 🔰 Embed description — exactly like your screenshot
     let description = `**Seeds**\n${seedsText.slice(0, 1024) || "❌ Empty"}\n\n**Gear**\n${gearText.slice(0, 1024) || "❌ Empty"}`;
 
     if (specialStock) {
@@ -177,9 +175,14 @@ module.exports = {
     const embed = new EmbedBuilder()
       .setTitle(`Plants vs Brainrots Stock - ${timeString}`)
       .setDescription(description)
-      .setColor(0xff0080); // pink border color
+      .setColor(0xff0080);
 
-    await channel.send({ content: ping || null, embeds: [embed] });
+    const msg = await channel.send({ content: ping || null, embeds: [embed] });
+
+    // 🇼 🇱 emoji reactions — same as your screenshot
+    await msg.react("🇼");
+    await msg.react("🇱");
+
     lastUpdatedAt = updatedAt;
   },
 
@@ -193,8 +196,11 @@ module.exports = {
       if (!channel) return false;
 
       const { updatedAt } = await this.fetchPVBRStock();
+      console.log(`[PVBR] Checking... last: ${lastUpdatedAt}, new: ${updatedAt}`);
+
       if (!updatedAt || updatedAt === lastUpdatedAt) return false;
 
+      console.log(`🆕 Update detected! Sending stock...`);
       await this.sendStock(channel);
       return true;
     } catch (err) {
