@@ -76,10 +76,12 @@ module.exports = {
 
   async fetchPVBRStock() {
     try {
-      const res = await axios.get("https://plantsvsbrainrotsstocktracker.com/api/stock?since=0");
+      const res = await axios.get(
+        "https://plantsvsbrainrotsstocktracker.com/api/stock?since=0"
+      );
       return res.data || {};
     } catch (e) {
-      console.error("Error fetching PVBR stock:", e);
+      console.error("❌ Error fetching PVBR stock:", e);
       return {};
     }
   },
@@ -91,12 +93,25 @@ module.exports = {
     const seeds = items.filter((i) => i.name.toLowerCase().includes("seed"));
     const gear = items.filter((i) => !i.name.toLowerCase().includes("seed"));
 
-    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
-    const timeString = now.toLocaleTimeString("en-PH", { hour12: true, hour: "2-digit", minute: "2-digit" });
+    const now = new Date(
+      new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" })
+    );
+    const timeString = now.toLocaleTimeString("en-PH", {
+      hour12: true,
+      hour: "2-digit",
+      minute: "2-digit",
+    });
 
     const formatList = (list) =>
       list.length
-        ? list.map((i) => `${this.getEmoji(i.name)} **${i.name.replace(/ Seed$/i, "")}** x${i.currentStock ?? "?"}`).join("\n")
+        ? list
+            .map(
+              (i) =>
+                `${this.getEmoji(i.name)} **${i.name.replace(/ Seed$/i, "")}** x${
+                  i.currentStock ?? "?"
+                }`
+            )
+            .join("\n")
         : "❌ Empty";
 
     const seedsText = formatList(seeds);
@@ -120,19 +135,23 @@ module.exports = {
     }
 
     const ping = [...new Set(pingRoles)].map((id) => `<@&${id}>`).join(" ");
-    const specialMentions = specialItems.map((i) => `@${i.name.replace(/ Seed$/i, "")}`).join(" ");
+    const specialMentions = specialItems
+      .map((i) => `@${i.name.replace(/ Seed$/i, "")}`)
+      .join(" ");
 
     const embed = new EmbedBuilder()
       .setTitle(`Plants vs Brainrots Stock - ${timeString}`)
       .setDescription(`**Seeds**\n${seedsText}\n\n**Gear**\n${gearText}`)
-      .setColor("#FF69B4"); // pink border
+      .setColor("#FF69B4");
 
+    console.log(
+      `📤 Sending stock to channel ${channel.id} at ${new Date().toLocaleTimeString()}`
+    );
     const msg = await channel.send({
       content: [specialMentions || null, ping || null].filter(Boolean).join(" "),
       embeds: [embed],
     });
 
-    // ✅ Add 🇼 and 🇱 reactions
     try {
       await msg.react("🇼");
       await msg.react("🇱");
@@ -166,7 +185,7 @@ module.exports = {
   async letStart({ args, message }) {
     const member = message.member;
     if (!member.permissions.has(PermissionsBitField.Flags.Administrator))
-      return message.reply("🚫 Only **Admins** can use this command.");
+      return message.reply("🚫 Only Admins can use this command.");
 
     const action = args[0]?.toLowerCase();
     if (!["on", "off", "check"].includes(action))
@@ -184,7 +203,9 @@ module.exports = {
       gcData.channelId = channel.id;
       allData[guildId] = gcData;
       await setData("pvbstock/discord", allData);
-      return message.reply("✅ PVBR Auto-stock **enabled**! Updates will be sent automatically.");
+      return message.reply(
+        "✅ PVBR Auto-stock **enabled**! Updates will be sent automatically."
+      );
     }
 
     if (action === "off") {
@@ -213,11 +234,56 @@ module.exports = {
   async onReady(client) {
     console.log("🔁 PVBR module ready — fetching latest stock timestamp...");
     try {
-      const { updatedAt } = await this.fetchPVBRStock();
-      if (updatedAt) lastUpdatedAt = updatedAt;
+      const stockData = await this.fetchPVBRStock();
+      if (stockData.updatedAt) lastUpdatedAt = stockData.updatedAt;
       console.log("✅ LastUpdatedAt set to:", lastUpdatedAt);
+
+      // === ALIGNED LOOP ===
+      (async function alignedCheckLoop() {
+        while (true) {
+          const next = new Date();
+          const minute = next.getMinutes();
+          const nextMinute = Math.ceil(minute / 5) * 5;
+          next.setMinutes(nextMinute === 60 ? 0 : nextMinute, 0, 0);
+          if (nextMinute === 60) next.setHours(next.getHours() + 1);
+
+          const delay = next.getTime() - Date.now();
+          console.log(`⏳ Waiting until ${next.toLocaleTimeString()} to start stock check...`);
+          await new Promise((res) => setTimeout(res, delay));
+
+          console.log(`🕒 Aligned check started (${new Date().toLocaleTimeString()})`);
+
+          let sentThisCycle = false;
+          const start = Date.now();
+
+          const checkInterval = setInterval(async () => {
+            const diff = (Date.now() - start) / 1000;
+
+            try {
+              // Check PVBR stock
+              const pvbChanged = await module.exports.checkForUpdate(client);
+
+              // If stock changed and not yet sent, send and stop interval
+              if (pvbChanged && !sentThisCycle) {
+                sentThisCycle = true;
+                clearInterval(checkInterval);
+                console.log("✅ PVBR stock updated — notifications sent!");
+              }
+
+              // Safety: stop interval after 4 minutes even if nothing changed
+              if (diff > 240 && !sentThisCycle) {
+                clearInterval(checkInterval);
+                console.log("⌛ No stock update found — waiting for next aligned time.");
+              }
+            } catch (err) {
+              console.error("❌ Error during aligned stock check:", err);
+              clearInterval(checkInterval);
+            }
+          }, 1000); // check every 1 second
+        }
+      })();
     } catch (err) {
-      console.error("❌ Error initializing PVBR loop:", err);
+      console.error("❌ Error initializing PVBR aligned loop:", err);
     }
   },
 };
