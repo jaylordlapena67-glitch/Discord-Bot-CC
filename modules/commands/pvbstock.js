@@ -3,7 +3,6 @@ const axios = require("axios");
 const { setData, getData } = require("../../database.js");
 
 let lastUpdatedAt = null;
-let checkingInterval = null;
 
 module.exports = {
   config: {
@@ -14,8 +13,6 @@ module.exports = {
     permission: 0,
     aliases: ["pvbstocks"],
   },
-
-  autoStockTimers: {},
 
   ITEM_EMOJI: {
     Cactus: "🌵",
@@ -133,36 +130,12 @@ module.exports = {
     }
   },
 
-  // 🕒 Aligns current time to nearest past 5-min mark
-  getAlignedNow() {
-    const now = new Date(
-      new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" })
-    );
-    const mins = Math.floor(now.getMinutes() / 5) * 5;
-    now.setMinutes(mins, 0, 0);
-    return now;
-  },
-
-  // 🕒 Gets next aligned 5-min mark
-  getNextRestock() {
-    const base = this.getAlignedNow();
-    base.setMinutes(base.getMinutes() + 5);
-    return base;
-  },
-
   async sendStock(channel) {
     const { items, updatedAt } = await this.fetchPVBRStock();
     if (!items?.length) return channel.send("⚠️ Failed to fetch PVBR stock.");
 
-    const seeds = items.filter((i) =>
-      i.name.toLowerCase().includes("seed")
-    );
-    const gear = items.filter(
-      (i) => !i.name.toLowerCase().includes("seed")
-    );
-
-    const alignedNow = this.getAlignedNow();
-    const next = this.getNextRestock();
+    const seeds = items.filter((i) => i.name.toLowerCase().includes("seed"));
+    const gear = items.filter((i) => !i.name.toLowerCase().includes("seed"));
 
     const seedsText = this.formatItems(seeds);
     const gearText = this.formatItems(gear);
@@ -172,103 +145,48 @@ module.exports = {
       secret: "1427517229129404477",
     };
 
-    const hasGodly = seeds.some(
-      (i) => this.getRarity(i.name) === "godly" && (i.currentStock ?? 0) > 0
-    );
-    const hasSecret = seeds.some(
-      (i) => this.getRarity(i.name) === "secret" && (i.currentStock ?? 0) > 0
-    );
-
     const pingRoles = [];
-    if (hasGodly) pingRoles.push(RARITY_ROLES.godly);
-    if (hasSecret) pingRoles.push(RARITY_ROLES.secret);
+    if (seeds.some((i) => this.getRarity(i.name) === "godly" && (i.currentStock ?? 0) > 0))
+      pingRoles.push(RARITY_ROLES.godly);
+    if (seeds.some((i) => this.getRarity(i.name) === "secret" && (i.currentStock ?? 0) > 0))
+      pingRoles.push(RARITY_ROLES.secret);
 
     const ping = pingRoles.map((id) => `<@&${id}>`).join(" ");
 
+    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
+
     const embed = new EmbedBuilder()
       .setTitle("🌱 Plants vs Brainrots Stock Update")
-      .setDescription(
-        `🕒 Current Time: **${alignedNow.toLocaleTimeString("en-PH", {
-          hour12: true,
-        })}**\n` +
-          `🕒 Next Restock: **${next.toLocaleTimeString("en-PH", {
-            hour12: true,
-          })}**\n\n\u200B`
-      )
+      .setDescription(`🕒 Current Time: **${now.toLocaleTimeString("en-PH", { hour12: true })}**`)
       .addFields(
         { name: "🌿 Seeds", value: seedsText.slice(0, 1024) || "❌ Empty" },
         { name: "🛠️ Gear", value: gearText.slice(0, 1024) || "❌ Empty" }
       )
       .setColor("Green")
       .setFooter({
-        text: `Last Updated: ${new Date(updatedAt).toLocaleTimeString("en-PH", {
-          hour12: true,
-        })}`,
+        text: `Last Updated: ${updatedAt ? new Date(updatedAt).toLocaleTimeString("en-PH", { hour12: true }) : "?"}`,
       });
 
     await channel.send({ content: ping || null, embeds: [embed] });
+    lastUpdatedAt = updatedAt;
   },
 
-  async monitorStockChange(channel, guildId) {
-    console.log("🔍 Starting API monitoring every 1s...");
-    checkingInterval = setInterval(async () => {
-      try {
-        const res = await axios.get(
-          "https://plantsvsbrainrotsstocktracker.com/api/stock?since=0"
-        );
-        const updatedAt = res.data?.updatedAt;
-        if (!updatedAt) return;
+  async checkForUpdate(client) {
+    try {
+      const channelId = (await getData("pvbstock/discord"))?.[client.guilds.cache.first().id]?.channelId;
+      if (!channelId) return false;
 
-        // First-run baseline
-        if (lastUpdatedAt === null) {
-          lastUpdatedAt = updatedAt;
-          console.log(`🟢 Initialized baseline updatedAt: ${updatedAt}`);
-          return;
-        }
+      const channel = await client.channels.fetch(channelId).catch(() => null);
+      if (!channel) return false;
 
-        // Detect API change
-        if (updatedAt !== lastUpdatedAt) {
-          console.log(`✅ Stock changed! Sending update...`);
-          lastUpdatedAt = updatedAt;
-          clearInterval(checkingInterval);
-          checkingInterval = null;
-          await this.sendStock(channel);
-          this.waitForNextAligned(channel, guildId);
-        }
-      } catch (err) {
-        console.error("❌ Error checking API:", err.message);
-      }
-    }, 1000);
-  },
+      const { updatedAt } = await this.fetchPVBRStock();
+      if (!updatedAt || updatedAt === lastUpdatedAt) return false;
 
-  waitForNextAligned(channel, guildId) {
-    const restockMinutes = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
-    console.log("⏳ Waiting for next aligned time (5-min interval)...");
-    const alignCheck = setInterval(() => {
-      const now = new Date(
-        new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" })
-      );
-      const m = now.getMinutes();
-      const s = now.getSeconds();
-      if (restockMinutes.includes(m) && s === 0) {
-        clearInterval(alignCheck);
-        this.monitorStockChange(channel, guildId);
-      }
-    }, 1000);
-  },
-
-  startAutoStock(channel) {
-    const guildId = channel.guild.id;
-    console.log(`🌱 PVBR Auto-stock started for ${channel.guild.name}`);
-    this.waitForNextAligned(channel, guildId);
-  },
-
-  stopAutoStock(channel, guildId = null) {
-    if (!guildId && channel) guildId = channel.guild.id;
-    if (checkingInterval) clearInterval(checkingInterval);
-    if (this.autoStockTimers[guildId]) {
-      clearTimeout(this.autoStockTimers[guildId]);
-      delete this.autoStockTimers[guildId];
+      await this.sendStock(channel);
+      return true;
+    } catch (err) {
+      console.error("❌ PVBR checkForUpdate error:", err);
+      return false;
     }
   },
 
@@ -293,10 +211,7 @@ module.exports = {
       gcData.channelId = channel.id;
       allData[guildId] = gcData;
       await setData("pvbstock/discord", allData);
-      this.startAutoStock(channel);
-      return message.reply(
-        "✅ PVBR Auto-stock **enabled**! Updates will be sent every restock time."
-      );
+      return message.reply("✅ PVBR Auto-stock **enabled**! Updates will be sent automatically.");
     }
 
     if (action === "off") {
@@ -305,44 +220,24 @@ module.exports = {
       gcData.enabled = false;
       allData[guildId] = gcData;
       await setData("pvbstock/discord", allData);
-      this.stopAutoStock(channel, guildId);
       return message.reply("🛑 PVBR Auto-stock **disabled**.");
     }
 
     if (action === "check") {
       const status = gcData.enabled ? "✅ Enabled" : "❌ Disabled";
-      const location = gcData.channelId
-        ? `<#${gcData.channelId}>`
-        : "`None`";
-      const next = this.getNextRestock().toLocaleTimeString("en-PH", {
-        hour12: true,
-      });
-
+      const location = gcData.channelId ? `<#${gcData.channelId}>` : "`None`";
       const embed = new EmbedBuilder()
         .setTitle("📊 PVBR Auto-stock Status")
         .addFields(
           { name: "Status", value: status, inline: true },
-          { name: "Channel", value: location, inline: true },
-          { name: "Next Restock (PH)", value: next, inline: false }
+          { name: "Channel", value: location, inline: true }
         )
         .setColor("Green");
-
       return message.reply({ embeds: [embed] });
     }
   },
 
   async onReady(client) {
-    const allData = (await getData("pvbstock/discord")) || {};
-    for (const [guildId, gcData] of Object.entries(allData)) {
-      if (gcData.enabled && gcData.channelId) {
-        const guild = client.guilds.cache.get(guildId);
-        if (!guild) continue;
-        const channel = guild.channels.cache.get(gcData.channelId);
-        if (channel) {
-          this.startAutoStock(channel);
-          console.log(`🔁 Auto-stock resumed for guild ${guild.name}`);
-        }
-      }
-    }
+    console.log("🔁 PVBR module ready — auto-stock will start with aligned loop.");
   },
 };
