@@ -1,3 +1,5 @@
+const { EmbedBuilder } = require("discord.js");
+
 module.exports = {
     config: {
         name: 'petcal',
@@ -25,7 +27,6 @@ module.exports = {
             return message.reply("⚠️ Weight must be greater than 0.");
         }
 
-        // Scale factor and base weight
         const scaleAtAge = 1 + (givenAge - 1) * (9 / 99);
         const baseWeight = givenWeight / scaleAtAge;
         const maxWeight = baseWeight * 10;
@@ -41,25 +42,26 @@ module.exports = {
         else if (baseWeight >= 7 && baseWeight <= 9.9) sizeCategory = "Titanic";
         else if (baseWeight >= 10) sizeCategory = "Godly";
 
-        // Build results
-        let result = `🐾 Pet Calculator 🐾\n\n` +
-                     `Input: ${givenWeight} kg (Age ${givenAge})\n` +
-                     `Base Weight (Age 1): ${baseWeight.toFixed(2)} kg\n` +
-                     `Size Category: ${sizeCategory}\n\nEstimated Weights:\n`;
-
+        // Build estimated weights text
+        let estWeights = "";
         for (let i = 1; i <= 100; i++) {
             if (i === 1 || i % 10 === 0 || i === givenAge || i === 100) {
                 let est = baseWeight + growthPerAge * (i - 1);
-                result += `Age ${i}: ${est.toFixed(2)} kg\n`;
+                estWeights += `• Age ${i}: ${est.toFixed(2)} kg\n`;
             }
         }
 
-        result += `\n➡️ At Age ${givenAge}, your pet weighs ${(baseWeight + growthPerAge * (givenAge - 1)).toFixed(2)} kg`;
+        const embed = new EmbedBuilder()
+            .setTitle("🐾 Pet Weight Calculator 🐾")
+            .setColor("Green")
+            .setDescription(`Input: **${givenWeight} kg** (Age ${givenAge})\nBase Weight (Age 1): **${baseWeight.toFixed(2)} kg**\nSize Category: **${sizeCategory}**`)
+            .addFields(
+                { name: "📊 Estimated Weights", value: estWeights.slice(0, 1024) }
+            )
+            .setFooter({
+                text: `➡️ At Age ${givenAge}, your pet weighs ${(baseWeight + growthPerAge * (givenAge - 1)).toFixed(2)} kg`
+            });
 
-        // Split message if too long
-        const chunks = result.match(/[\s\S]{1,1900}/g);
-        for (const chunk of chunks) {
-            await message.reply(chunk);
-        }
+        await message.reply({ embeds: [embed] });
     }
 };
