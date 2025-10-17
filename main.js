@@ -83,13 +83,29 @@ async function ensurePanelInChannel(channel) {
   if (!existing) await sendPanelToChannel(channel);
 }
 
+// === ALIGNED TIME CHECK (every 5,10,15...) ===
+function getNextAlignedTime() {
+  const now = new Date();
+  const minute = now.getMinutes();
+  const nextMinute = Math.ceil(minute / 5) * 5;
+  const next = new Date(now);
+  next.setMinutes(nextMinute === 60 ? 0 : nextMinute, 0, 0);
+  if (nextMinute === 60) next.setHours(now.getHours() + 1);
+  return next;
+}
+
+async function waitUntilNextAligned() {
+  const next = getNextAlignedTime();
+  const delay = next.getTime() - Date.now();
+  console.log(`⏳ Waiting until ${next.toLocaleTimeString()} to start stock check...`);
+  await new Promise(res => setTimeout(res, delay));
+}
+
 // === EMOJI NICKNAME ===
 function extractEmojis(text) {
   if (!text) return [];
   return text.match(/([\p{Emoji_Presentation}\p{Emoji}\u200D]+)/gu) || [];
 }
-
-const LOG_CHANNEL_ID = '1426904103534985317';
 
 async function applyHighestRoleEmoji(member) {
   if (!member.manageable) return;
@@ -128,11 +144,13 @@ client.once('ready', async () => {
   try { await loadSlashCommands(client); } catch (e) { console.warn('loadSlashCommands err', e); }
   try { loadEvents(client); } catch (e) { console.warn('loadEvents err', e); }
 
+  // ensure all panels exist
   for (const cid of ROLE_CHANNELS) {
     const channel = await client.channels.fetch(cid).catch(() => null);
     if (channel) await ensurePanelInChannel(channel);
   }
 
+  // periodic 5 min recheck
   setInterval(async () => {
     for (const cid of ROLE_CHANNELS) {
       const channel = await client.channels.fetch(cid).catch(() => null);
@@ -142,6 +160,43 @@ client.once('ready', async () => {
 
   console.log('🔁 Role panel auto-check active (5m).');
 
+  // resume PVBR & GAG stock
+  const pvbstock = client.commands.get("pvbstock");
+  const gagstock = client.commands.get("gagstock");
+  if (pvbstock?.onReady) await pvbstock.onReady(client);
+  if (gagstock?.onReady) await gagstock.onReady(client);
+
+  // aligned loop for stock checking
+  (async function alignedCheckLoop() {
+    while (true) {
+      await waitUntilNextAligned();
+
+      console.log(`🕒 Aligned check started (${new Date().toLocaleTimeString()})`);
+
+      const start = Date.now();
+      let updated = false;
+      const checkInterval = setInterval(async () => {
+        const diff = (Date.now() - start) / 1000;
+
+        if (pvbstock?.checkForUpdate && gagstock?.checkForUpdate) {
+          const pvbChanged = await pvbstock.checkForUpdate(client);
+          const gagChanged = await gagstock.checkForUpdate(client);
+          if (pvbChanged || gagChanged) {
+            updated = true;
+            clearInterval(checkInterval);
+            console.log("✅ Stock updated — notifications sent!");
+          }
+        }
+
+        if (diff > 240 && !updated) {
+          console.log("⌛ No stock update found — waiting for next aligned time.");
+          clearInterval(checkInterval);
+        }
+      }, 1000);
+    }
+  })();
+
+  // nickname emoji sync
   console.log("🔄 Checking and updating nicknames with emojis...");
   for (const guild of client.guilds.cache.values()) {
     const members = await guild.members.fetch();
@@ -184,6 +239,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 // === WELCOME / GOODBYE ===
 const WELCOME_CHANNEL = '1427870606660997192';
 const GOODBYE_CHANNEL = '1427870731508781066';
+const LOG_CHANNEL_ID = '1426904103534985317';
 
 client.on(Events.GuildMemberAdd, async (member) => {
   const channel = member.guild.channels.cache.get(WELCOME_CHANNEL);
@@ -233,6 +289,7 @@ client.on(Events.MessageCreate, async (message) => {
   try { await command.letStart({ args, message, discord: { client } }); } catch (error) { console.error(error); }
 });
 
+// === GUILD MEMBER UPDATE ===
 client.on(Events.GuildMemberUpdate, async (_, newMember) => {
   await applyHighestRoleEmoji(newMember);
 });
