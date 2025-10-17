@@ -229,6 +229,22 @@ module.exports = {
   },
 
   async onReady(client) {
-    console.log("🔁 PVBR module ready — auto-stock will start with aligned loop.");
+    console.log("🔁 PVBR module ready — fetching latest stock timestamp...");
+
+    try {
+      // Fetch latest updatedAt immediately
+      const { updatedAt } = await this.fetchPVBRStock();
+      if (updatedAt) lastUpdatedAt = updatedAt;
+      console.log("✅ LastUpdatedAt set to:", lastUpdatedAt);
+
+      // Start loop to check every 1 second
+      setInterval(async () => {
+        for (const guild of client.guilds.cache.values()) {
+          await this.checkForUpdate(client);
+        }
+      }, 1000);
+    } catch (err) {
+      console.error("❌ Error initializing PVBR loop:", err);
+    }
   },
 };
