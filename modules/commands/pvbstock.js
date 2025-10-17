@@ -40,17 +40,6 @@ module.exports = {
     "Carrot Launcher": "🥕🚀",
   },
 
-  CATEGORY_EMOJI: {
-    common: "🟢",
-    rare: "🌿",
-    epic: "🔵",
-    legendary: "🟣",
-    mythic: "✨",
-    godly: "🟡",
-    secret: "🎩",
-    unknown: "❔",
-  },
-
   MANUAL_RARITY: {
     Cactus: "rare",
     Strawberry: "rare",
@@ -85,26 +74,6 @@ module.exports = {
     return this.ITEM_EMOJI[name.replace(/ Seed$/i, "")] || "❔";
   },
 
-  formatItems(items) {
-    if (!items?.length) return "❌ Empty";
-    const grouped = {};
-    for (const i of items) {
-      const rarity = this.getRarity(i.name);
-      if (!grouped[rarity]) grouped[rarity] = [];
-      grouped[rarity].push(
-        `• ${this.getEmoji(i.name)} **${i.name.replace(/ Seed$/i, "")}** (${i.currentStock ?? "?"})`
-      );
-    }
-    const order = ["common", "rare", "epic", "legendary", "mythic", "godly", "secret", "unknown"];
-    return order
-      .filter((cat) => grouped[cat])
-      .map(
-        (cat) =>
-          `[${this.CATEGORY_EMOJI[cat]} ${cat.toUpperCase()}]\n${grouped[cat].join("\n")}`
-      )
-      .join("\n\n");
-  },
-
   async fetchPVBRStock() {
     try {
       const res = await axios.get("https://plantsvsbrainrotsstocktracker.com/api/stock?since=0");
@@ -122,8 +91,20 @@ module.exports = {
     const seeds = items.filter((i) => i.name.toLowerCase().includes("seed"));
     const gear = items.filter((i) => !i.name.toLowerCase().includes("seed"));
 
-    const seedsText = this.formatItems(seeds);
-    const gearText = this.formatItems(gear);
+    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
+    const timeString = now.toLocaleTimeString("en-PH", {
+      hour12: true,
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    const formatList = (list) =>
+      list.length
+        ? list.map((i) => `${this.getEmoji(i.name)} ${i.name.replace(/ Seed$/i, "")} x${i.currentStock ?? "?"}`).join("\n")
+        : "❌ Empty";
+
+    const seedsText = formatList(seeds);
+    const gearText = formatList(gear);
 
     const RARITY_ROLES = {
       godly: "1427517104780869713",
@@ -131,41 +112,36 @@ module.exports = {
     };
 
     const pingRoles = [];
-    if (seeds.some((i) => this.getRarity(i.name) === "godly" && (i.currentStock ?? 0) > 0))
-      pingRoles.push(RARITY_ROLES.godly);
-    if (seeds.some((i) => this.getRarity(i.name) === "secret" && (i.currentStock ?? 0) > 0))
-      pingRoles.push(RARITY_ROLES.secret);
+    const specialItems = [];
 
-    const ping = pingRoles.map((id) => `<@&${id}>`).join(" ");
-
-    const specialStock = seeds.filter(
-      (i) =>
-        ["godly", "secret"].includes(this.getRarity(i.name)) &&
-        (i.currentStock ?? 0) > 0
-    );
-
-    const privateServerChannelId = "1426903128565088357";
-    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
-
-    let description = `🕒 Current Time: **${now.toLocaleTimeString("en-PH", { hour12: true })}**\n\n`;
-    description += `🌿 **Seeds:**\n${seedsText.slice(0, 1024) || "❌ Empty"}\n\n`;
-    description += `🛠️ **Gear:**\n${gearText.slice(0, 1024) || "❌ Empty"}`;
-
-    if (specialStock.length > 0) {
-      const specialItems = specialStock
-        .map(i => `• ${this.getEmoji(i.name)} **${i.name.replace(/ Seed$/i, "")}** (${i.currentStock ?? "?"})`)
-        .join("\n");
-
-      description += `\n\n🎉 **Special Stock:**\n${specialItems}`;
-      description += `\n\n🚀 Join fast! Here's the list of private server:\n<#${privateServerChannelId}>`;
+    for (const i of seeds) {
+      const rarity = this.getRarity(i.name);
+      if (["godly", "secret"].includes(rarity) && (i.currentStock ?? 0) > 0) {
+        specialItems.push(i);
+        if (rarity === "godly") pingRoles.push(RARITY_ROLES.godly);
+        if (rarity === "secret") pingRoles.push(RARITY_ROLES.secret);
+      }
     }
 
-    const embed = new EmbedBuilder()
-      .setTitle("🌱 Plants vs Brainrots Stock Update")
-      .setDescription(description)
-      .setColor("Green");
+    const ping = [...new Set(pingRoles)].map((id) => `<@&${id}>`).join(" ");
+    const specialMentions = specialItems.map((i) => `@${i.name.replace(/ Seed$/i, "")}`).join(" ");
 
-    await channel.send({ content: ping || null, embeds: [embed] });
+    const embed = new EmbedBuilder()
+      .setTitle(`Plants vs Brainrots Stock - ${timeString}`)
+      .setDescription(`**Seeds**\n${seedsText}\n\n**Gear**\n${gearText}`)
+      .setColor("#FF69B4");
+
+    const msg = await channel.send({
+      content: [specialMentions || null, ping || null].filter(Boolean).join(" "),
+      embeds: [embed],
+    });
+
+    try {
+      await msg.react("🇼");
+      await msg.react("🇱");
+    } catch (err) {
+      console.error("⚠️ Failed to add reactions:", err.message);
+    }
 
     lastUpdatedAt = updatedAt;
   },
@@ -193,7 +169,7 @@ module.exports = {
   async letStart({ args, message }) {
     const member = message.member;
     if (!member.permissions.has(PermissionsBitField.Flags.Administrator))
-      return message.reply("🚫 Only **Admins** can use this command.");
+      return message.reply("🚫 Only Admins can use this command.");
 
     const action = args[0]?.toLowerCase();
     if (!["on", "off", "check"].includes(action))
@@ -232,22 +208,21 @@ module.exports = {
           { name: "Status", value: status, inline: true },
           { name: "Channel", value: location, inline: true }
         )
-        .setColor("Green");
+        .setColor("#FF69B4");
       return message.reply({ embeds: [embed] });
     }
   },
 
   async onReady(client) {
     console.log("🔁 PVBR module ready — fetching latest stock timestamp...");
-
     try {
-      const { updatedAt } = await this.fetchPVBRStock();
-      if (updatedAt) lastUpdatedAt = updatedAt;
+      const stockData = await this.fetchPVBRStock();
+      if (stockData.updatedAt) lastUpdatedAt = stockData.updatedAt;
       console.log("✅ LastUpdatedAt set to:", lastUpdatedAt);
 
       setInterval(async () => {
         await this.checkForUpdate(client);
-      }, 1000); // every second
+      }, 1000);
     } catch (err) {
       console.error("❌ Error initializing PVBR loop:", err);
     }
