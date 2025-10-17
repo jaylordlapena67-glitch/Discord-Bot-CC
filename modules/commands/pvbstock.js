@@ -88,26 +88,20 @@ module.exports = {
     const { items, updatedAt } = await this.fetchPVBRStock();
     if (!items?.length) return channel.send("⚠️ Failed to fetch PVBR stock.");
 
-    // Split between seeds and gear
     const seeds = items.filter((i) => i.name.toLowerCase().includes("seed"));
     const gear = items.filter((i) => !i.name.toLowerCase().includes("seed"));
 
-    // Format time (Manila timezone)
     const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
     const timeString = now.toLocaleTimeString("en-PH", { hour12: true, hour: "2-digit", minute: "2-digit" });
 
-    // Format lists
     const formatList = (list) =>
       list.length
-        ? list
-            .map((i) => `${this.getEmoji(i.name)} **${i.name.replace(/ Seed$/i, "")}** x${i.currentStock ?? "?"}`)
-            .join("\n")
+        ? list.map((i) => `${this.getEmoji(i.name)} **${i.name.replace(/ Seed$/i, "")}** x${i.currentStock ?? "?"}`).join("\n")
         : "❌ Empty";
 
     const seedsText = formatList(seeds);
     const gearText = formatList(gear);
 
-    // Detect rare stock for ping
     const RARITY_ROLES = {
       godly: "1427517104780869713",
       secret: "1427517229129404477",
@@ -128,18 +122,23 @@ module.exports = {
     const ping = [...new Set(pingRoles)].map((id) => `<@&${id}>`).join(" ");
     const specialMentions = specialItems.map((i) => `@${i.name.replace(/ Seed$/i, "")}`).join(" ");
 
-    // Build embed body
-    let description = `**Seeds**\n${seedsText}\n\n**Gear**\n${gearText}`;
-
     const embed = new EmbedBuilder()
-      .setTitle(`Plants vs Brainrots Stock – ${timeString}`)
-      .setDescription(description)
-      .setColor("#FF69B4"); // pink border (like screenshot)
+      .setTitle(`Plants vs Brainrots Stock - ${timeString}`)
+      .setDescription(`**Seeds**\n${seedsText}\n\n**Gear**\n${gearText}`)
+      .setColor("#FF69B4"); // pink border
 
-    await channel.send({
+    const msg = await channel.send({
       content: [specialMentions || null, ping || null].filter(Boolean).join(" "),
       embeds: [embed],
     });
+
+    // ✅ Add 🇼 and 🇱 reactions (like in screenshot)
+    try {
+      await msg.react("🇼");
+      await msg.react("🇱");
+    } catch (err) {
+      console.error("⚠️ Failed to add reactions:", err.message);
+    }
 
     lastUpdatedAt = updatedAt;
   },
@@ -219,7 +218,6 @@ module.exports = {
       if (updatedAt) lastUpdatedAt = updatedAt;
       console.log("✅ LastUpdatedAt set to:", lastUpdatedAt);
 
-      // Check every second for new restock
       setInterval(async () => {
         for (const guild of client.guilds.cache.values()) {
           await this.checkForUpdate(client);
