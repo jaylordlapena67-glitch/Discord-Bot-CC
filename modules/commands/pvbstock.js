@@ -220,9 +220,50 @@ module.exports = {
       if (stockData.updatedAt) lastUpdatedAt = stockData.updatedAt;
       console.log("✅ LastUpdatedAt set to:", lastUpdatedAt);
 
-      setInterval(async () => {
-        await this.checkForUpdate(client);
-      }, 1000);
+      // === ALIGNED LOOP START ===
+      function getNextAlignedTime() {
+        const now = new Date();
+        const minute = now.getMinutes();
+        const nextMinute = Math.ceil(minute / 5) * 5; // every 5 mins
+        const next = new Date(now);
+        next.setMinutes(nextMinute === 60 ? 0 : nextMinute, 0, 0);
+        if (nextMinute === 60) next.setHours(now.getHours() + 1);
+        return next;
+      }
+
+      async function waitUntilNextAligned() {
+        const next = getNextAlignedTime();
+        const delay = next.getTime() - Date.now();
+        console.log(`⏳ Waiting until ${next.toLocaleTimeString()} to start stock check...`);
+        await new Promise(res => setTimeout(res, delay));
+      }
+
+      (async function alignedCheckLoop() {
+        while (true) {
+          await waitUntilNextAligned();
+          console.log(`🕒 Aligned check started (${new Date().toLocaleTimeString()})`);
+
+          const start = Date.now();
+          let updated = false;
+          const checkInterval = setInterval(async () => {
+            const diff = (Date.now() - start) / 1000;
+
+            const changed = await module.exports.checkForUpdate(client);
+            if (changed) {
+              updated = true;
+              clearInterval(checkInterval);
+              console.log("✅ Stock updated — notifications sent!");
+            }
+
+            if (diff > 240 && !updated) {
+              console.log("⌛ No stock update found — waiting for next aligned time.");
+              clearInterval(checkInterval);
+            }
+          }, 1000);
+        }
+      })();
+      // === ALIGNED LOOP END ===
+
     } catch (err) {
       console.error("❌ Error initializing PVBR loop:", err);
     }
