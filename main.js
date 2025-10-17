@@ -84,6 +84,59 @@ async function ensurePanelInChannel(channel) {
   if (!existing) await sendPanelToChannel(channel);
 }
 
+// === ALIGNED TIME CHECK (every 5,10,15...) ===
+function getNextAlignedTime() {
+  const now = new Date();
+  const minute = now.getMinutes();
+  const nextMinute = Math.ceil(minute / 5) * 5;
+  const next = new Date(now);
+  next.setMinutes(nextMinute === 60 ? 0 : nextMinute, 0, 0);
+  if (nextMinute === 60) next.setHours(now.getHours() + 1);
+  return next;
+}
+
+async function waitUntilNextAligned() {
+  const next = getNextAlignedTime();
+  const delay = next.getTime() - Date.now();
+  console.log(`⏳ Waiting until ${next.toLocaleTimeString()} to start stock check...`);
+  await new Promise(res => setTimeout(res, delay));
+}
+
+// === EMOJI NICKNAME ===
+function extractEmojis(text) {
+  if (!text) return [];
+  return text.match(/([\p{Emoji_Presentation}\p{Emoji}\u200D]+)/gu) || [];
+}
+
+async function applyHighestRoleEmoji(member) {
+  if (!member.manageable) return;
+  try {
+    const rolesWithEmoji = member.roles.cache
+      .filter(role => extractEmojis(role.name).length > 0)
+      .sort((a, b) => b.position - a.position);
+
+    const topRole = rolesWithEmoji.first();
+    const emoji = topRole ? extractEmojis(topRole.name)[0] : "";
+    const baseName = member.displayName.replace(/[\p{Emoji_Presentation}\p{Emoji}\u200D]+/gu, "").trim();
+    const newNickname = emoji ? `${baseName} ${emoji}` : baseName;
+
+    if (member.displayName !== newNickname) {
+      await member.setNickname(newNickname).catch(() => {});
+      const logChannel = member.guild.channels.cache.get(LOG_CHANNEL_ID);
+      if (logChannel) {
+        const embed = new EmbedBuilder()
+          .setColor(Colors.Blue)
+          .setTitle("🪄 Nickname Updated")
+          .setDescription(`**Member:** ${member.user.tag}\n**New Nickname:** ${newNickname}\n**Top Role:** ${topRole ? topRole.name : "None"}`)
+          .setTimestamp();
+        logChannel.send({ embeds: [embed] }).catch(() => {});
+      }
+    }
+  } catch (err) {
+    console.error(`❌ Failed to apply emoji nickname for ${member.user.tag}:`, err);
+  }
+}
+
 // === READY EVENT ===
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
@@ -113,15 +166,43 @@ client.once('ready', async () => {
     await xpModule.autoAssignAllMembers(guild);
   }
 
-  // resume PVBR stock
+  // resume PVBR & GAG stock
   const pvbstock = client.commands.get("pvbstock");
-  if (pvbstock?.onReady) await pvbstock.onReady(client);
-
-  // resume GAG stock
   const gagstock = client.commands.get("gagstock");
+  if (pvbstock?.onReady) await pvbstock.onReady(client);
   if (gagstock?.onReady) await gagstock.onReady(client);
 
-  // update nicknames with emojis
+  // aligned loop for stock checking
+  (async function alignedCheckLoop() {
+    while (true) {
+      await waitUntilNextAligned();
+
+      console.log(`🕒 Aligned check started (${new Date().toLocaleTimeString()})`);
+
+      const start = Date.now();
+      let updated = false;
+      const checkInterval = setInterval(async () => {
+        const diff = (Date.now() - start) / 1000;
+
+        if (pvbstock?.checkForUpdate && gagstock?.checkForUpdate) {
+          const pvbChanged = await pvbstock.checkForUpdate(client);
+          const gagChanged = await gagstock.checkForUpdate(client);
+          if (pvbChanged || gagChanged) {
+            updated = true;
+            clearInterval(checkInterval);
+            console.log("✅ Stock updated — notifications sent!");
+          }
+        }
+
+        if (diff > 240 && !updated) {
+          console.log("⌛ No stock update found — waiting for next aligned time.");
+          clearInterval(checkInterval);
+        }
+      }, 1000);
+    }
+  })();
+
+  // nickname emoji sync
   console.log("🔄 Checking and updating nicknames with emojis...");
   for (const guild of client.guilds.cache.values()) {
     const members = await guild.members.fetch();
@@ -161,7 +242,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
-// === WELCOME / GOODBYE CHANNELS ===
+// === WELCOME / GOODBYE ===
 const WELCOME_CHANNEL = '1427870606660997192';
 const GOODBYE_CHANNEL = '1427870731508781066';
 const LOG_CHANNEL_ID = '1426904103534985317';
@@ -194,7 +275,7 @@ client.on(Events.GuildMemberRemove, async (member) => {
   await channel.send({ embeds: [embed] });
 });
 
-// === MESSAGE: WFL + AUTO WARNING ===
+// === MESSAGE: WFL + WARN ===
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot || !message.guild) return;
 
@@ -215,41 +296,7 @@ client.on(Events.MessageCreate, async (message) => {
   try { await command.letStart({ args, message, discord: { client } }); } catch (error) { console.error(error); }
 });
 
-// === NICKNAME EMOJI SYSTEM ===
-function extractEmojis(text) {
-  if (!text) return [];
-  return text.match(/([\p{Emoji_Presentation}\p{Emoji}\u200D]+)/gu) || [];
-}
-
-async function applyHighestRoleEmoji(member) {
-  if (!member.manageable) return;
-  try {
-    const rolesWithEmoji = member.roles.cache
-      .filter(role => extractEmojis(role.name).length > 0)
-      .sort((a, b) => b.position - a.position);
-
-    const topRole = rolesWithEmoji.first();
-    const emoji = topRole ? extractEmojis(topRole.name)[0] : "";
-    const baseName = member.displayName.replace(/[\p{Emoji_Presentation}\p{Emoji}\u200D]+/gu, "").trim();
-    const newNickname = emoji ? `${baseName} ${emoji}` : baseName;
-
-    if (member.displayName !== newNickname) {
-      await member.setNickname(newNickname).catch(() => {});
-      const logChannel = member.guild.channels.cache.get(LOG_CHANNEL_ID);
-      if (logChannel) {
-        const embed = new EmbedBuilder()
-          .setColor(Colors.Blue)
-          .setTitle("🪄 Nickname Updated")
-          .setDescription(`**Member:** ${member.user.tag}\n**New Nickname:** ${newNickname}\n**Top Role:** ${topRole ? topRole.name : "None"}`)
-          .setTimestamp();
-        logChannel.send({ embeds: [embed] }).catch(() => {});
-      }
-    }
-  } catch (err) {
-    console.error(`❌ Failed to apply emoji nickname for ${member.user.tag}:`, err);
-  }
-}
-
+// === GUILD MEMBER UPDATE ===
 client.on(Events.GuildMemberUpdate, async (_, newMember) => {
   await applyHighestRoleEmoji(newMember);
 });
