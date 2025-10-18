@@ -1,3 +1,4 @@
+// main.js
 const {
   Client,
   GatewayIntentBits,
@@ -243,7 +244,7 @@ client.on(Events.GuildMemberAdd, async (member) => {
   const channel = member.guild.channels.cache.get(WELCOME_CHANNEL);
   if (channel) {
     const embed = new EmbedBuilder()
-      .setColor(Colors.Green)
+.setColor(Colors.Green)
       .setTitle(`👋 Welcome ${member.user.tag}!`)
       .setDescription(`Glad to have you here, <@${member.id}>! 🎉`)
       .addFields({ name: 'Member Count', value: `${member.guild.memberCount}`, inline: true })
@@ -266,10 +267,6 @@ client.on(Events.GuildMemberRemove, async (member) => {
 });
 
 // === MESSAGE HANDLER: WFL + WARN + PREFIX COMMANDS + GPT MODULE ===
-const GPT_CHANNEL_ID = "1428887115009360004"; // GPT-only channel
-const GPT_COOLDOWN_MS = 5000;
-const gptCooldowns = {};
-
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot || !message.guild) return;
 
@@ -282,52 +279,22 @@ client.on(Events.MessageCreate, async (message) => {
   // === WARNING MODULE ===
   try { await warnModule.handleEvent({ message }); } catch (err) { console.error(err); }
 
+  // === PREFIX COMMANDS ===
   const prefix = config.prefix;
-  const args = message.content.startsWith(prefix)
-    ? message.content.slice(prefix.length).trim().split(/\s+/)
-    : [];
-  const commandName = args.shift()?.toLowerCase();
-  const command = client.commands.get(commandName) || client.commands.find(cmd => cmd.config?.aliases?.includes(commandName));
-  if (command && message.content.startsWith(prefix)) {
-    try { await command.letStart({ args, message, discord: { client } }); } catch (error) { console.error(error); }
-    return;
+  if (message.content.startsWith(prefix)) {
+    const args = message.content.slice(prefix.length).trim().split(/\s+/);
+    const commandName = args.shift()?.toLowerCase();
+    const command = client.commands.get(commandName) || client.commands.find(cmd => cmd.config?.aliases?.includes(commandName));
+    if (command) {
+      try { await command.letStart({ args, message, discord: { client } }); } catch (error) { console.error(error); }
+      return;
+    }
   }
 
   // === GPT MODULE AUTO-REPLY (no prefix required) ===
-  if (message.channel.id === GPT_CHANNEL_ID) {
-    const now = Date.now();
-    const userId = message.author.id;
-    if (gptCooldowns[userId] && now - gptCooldowns[userId] < GPT_COOLDOWN_MS) return;
-    gptCooldowns[userId] = now;
-
-    const typingMessage = await message.reply("🤖 Thinking");
-    let dotCount = 0;
-    const typingInterval = setInterval(async () => {
-      dotCount = (dotCount + 1) % 4;
-      const dots = ".".repeat(dotCount);
-      try { await typingMessage.edit(`🤖 Thinking${dots}`); } catch {}
-    }, 700);
-
-    try {
-      const axios = require('axios');
-      const response = await axios.get(
-        `https://api-rynxzei.onrender.com/api/pinoygpt?prompt=${encodeURIComponent(message.content)}&uid=${userId}`
-      );
-      const gptContent = response.data?.response || "⚠️ No response from the API.";
-      clearInterval(typingInterval);
-
-      const embed = new EmbedBuilder()
-        .setColor(Colors.Blurple)
-        .setDescription(gptContent)
-        .setFooter({ text: `Reply to ${message.author.tag}`, iconURL: message.author.displayAvatarURL({ dynamic: true }) })
-        .setTimestamp();
-
-      await typingMessage.edit({ content: null, embeds: [embed] });
-    } catch (err) {
-      clearInterval(typingInterval);
-      await typingMessage.edit("⚠️ Error contacting the GPT API. Please try again later.");
-      console.error("❌ GPT API Error:", err);
-    }
+  const gptCommand = client.commands.get("gpt");
+  if (gptCommand && message.channel.id === gptCommand.config.channelId) {
+    try { await gptCommand.letStart({ message }); } catch (err) { console.error("GPT module error:", err); }
   }
 });
 
