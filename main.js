@@ -20,7 +20,7 @@ const warnModule = require('./modules/commands/warning.js');
 // === AI MODULES ===
 const gptModule = require('./modules/commands/gpt.js');
 const ariaModule = require('./modules/commands/airia.js');
-const metaModule = require('./modules/commands/metaai.js'); // 👈 NEW
+const metaModule = require('./modules/commands/metaai.js');
 
 // === CLIENT SETUP ===
 const client = new Client({
@@ -218,9 +218,10 @@ client.on(Events.MessageDelete, async (message) => {
   if (channel) await sendPanelToChannel(channel);
 });
 
-// === ROLE BUTTON INTERACTION ===
+// === ROLE BUTTON INTERACTION (OLD STYLE) ===
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isButton()) return;
+
   const roleId = roleMap[interaction.customId];
   if (!roleId) return;
 
@@ -230,15 +231,27 @@ client.on(Events.InteractionCreate, async (interaction) => {
   try {
     if (hasRole) {
       await member.roles.remove(roleId, 'Toggled via panel');
-      await interaction.reply({ content: `❌ Removed <@&${roleId}> from you.`, ephemeral: true });
+      await interaction.reply({
+        content: `❌ Removed <@&${roleId}> from you.`,
+        ephemeral: true
+      });
     } else {
       await member.roles.add(roleId, 'Toggled via panel');
-      await interaction.reply({ content: `✅ Added <@&${roleId}> to you.`, ephemeral: true });
+      await interaction.reply({
+        content: `✅ Added <@&${roleId}> to you.`,
+        ephemeral: true
+      });
     }
+
     await applyHighestRoleEmoji(member);
   } catch (err) {
-    console.error('Role toggle error:', err);
-    await interaction.reply({ content: '❌ Failed to toggle role.', ephemeral: true });
+    console.error('❌ Role toggle error:', err);
+    try {
+      await interaction.reply({
+        content: '⚠️ Failed to toggle role. Please check my permissions.',
+        ephemeral: true
+      });
+    } catch {}
   }
 });
 
