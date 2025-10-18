@@ -19,7 +19,7 @@ const warnModule = require('./modules/commands/warning.js');
 
 // === AI MODULES ===
 const gptModule = require('./modules/commands/gpt.js');
-const ariaModule = require('./modules/commands/airia.js'); // New Aria-Ai module
+const ariaModule = require('./modules/commands/aria-ai.js');
 
 // === CLIENT SETUP ===
 const client = new Client({
@@ -93,6 +93,25 @@ async function ensurePanelInChannel(channel) {
   if (!existing) await sendPanelToChannel(channel);
 }
 
+// === ALIGNED TIME CHECK FOR STOCK ===
+function getNextAlignedTime() {
+  const now = new Date();
+  const minute = now.getMinutes();
+  const nextMinute = Math.ceil(minute / 5) * 5;
+  const next = new Date(now);
+  next.setMinutes(nextMinute === 60 ? 0 : nextMinute, 0, 0);
+  if (nextMinute === 60) next.setHours(now.getHours() + 1);
+  return next;
+}
+
+async function waitUntilNextAligned() {
+  const next = getNextAlignedTime();
+  const delay = next.getTime() - Date.now();
+  console.log(`⏳ Waiting until ${next.toLocaleTimeString()} to start stock check...`);
+  await new Promise(res => setTimeout(res, delay));
+}
+
+// === EMOJI DETECTION & NICKNAME LOGIC ===
 function extractEmojis(text) {
   if (!text) return [];
   const match = text.match(/^([\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F]+)/u);
@@ -152,7 +171,41 @@ client.once('ready', async () => {
 
   console.log('🔁 Role panel auto-check active (5m).');
 
+  // === PVBR & GAG auto-stock resume ===
+  const pvbstock = client.commands.get("pvbstock");
+  const gagstock = client.commands.get("gagstock");
+  if (pvbstock?.onReady) await pvbstock.onReady(client);
+  if (gagstock?.onReady) await gagstock.onReady(client);
+
+  // Start aligned check loop for auto-stock
+  (async function alignedCheckLoop() {
+    while (true) {
+      await waitUntilNextAligned();
+      console.log(`🕒 Aligned check started (${new Date().toLocaleTimeString()})`);
+
+      const start = Date.now();
+      let updated = false;
+      const checkInterval = setInterval(async () => {
+        const diff = (Date.now() - start) / 1000;
+        if (pvbstock?.checkForUpdate && gagstock?.checkForUpdate) {
+          const pvbChanged = await pvbstock.checkForUpdate(client);
+          const gagChanged = await gagstock.checkForUpdate(client);
+          if (pvbChanged || gagChanged) {
+            updated = true;
+            clearInterval(checkInterval);
+            console.log("✅ Stock updated — notifications sent!");
+          }
+        }
+        if (diff > 240 && !updated) {
+          console.log("⌛ No stock update found — waiting for next aligned time.");
+          clearInterval(checkInterval);
+        }
+      }, 1000);
+    }
+  })();
+
   // Update nicknames with emojis
+  console.log("🔄 Checking and updating nicknames with emojis...");
   for (const guild of client.guilds.cache.values()) {
     const members = await guild.members.fetch();
     for (const member of members.values()) await applyHighestRoleEmoji(member);
@@ -223,16 +276,16 @@ client.on(Events.GuildMemberRemove, async (member) => {
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot || !message.guild) return;
 
-  // WFL REACTION
+  // === WFL REACTION ===
   const wflRegex = /\b(?:win\s*or\s*lose|win\s*lose|w[\s\/\.\-]*f[\s\/\.\-]*l)\b/i;
   if (wflRegex.test(message.content)) {
     try { await message.react('🇼'); await message.react('🇫'); await message.react('🇱'); } catch {}
   }
 
-  // WARNING MODULE
+  // === WARNING MODULE ===
   try { await warnModule.handleEvent({ message }); } catch (err) { console.error(err); }
 
-  // PREFIX COMMANDS
+  // === PREFIX COMMANDS ===
   const prefix = config.prefix;
   if (message.content.startsWith(prefix)) {
     const args = message.content.slice(prefix.length).trim().split(/\s+/);
@@ -244,12 +297,12 @@ client.on(Events.MessageCreate, async (message) => {
     }
   }
 
-  // GPT MODULE AUTO-REPLY
+  // === GPT MODULE AUTO-REPLY ===
   if (gptModule && message.channel.id === gptModule.config.channelId) {
     try { await gptModule.letStart({ message }); } catch (err) { console.error("GPT module error:", err); }
   }
 
-  // ARIA-AI MODULE AUTO-REPLY
+  // === ARIA-AI MODULE AUTO-REPLY ===
   if (ariaModule && message.channel.id === ARIA_CHANNEL_ID) {
     try { await ariaModule.letStart({ message }); } catch (err) { console.error("Aria-Ai module error:", err); }
   }
