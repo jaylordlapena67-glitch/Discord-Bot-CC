@@ -1,4 +1,3 @@
-// modules/commands/metai.js
 const { EmbedBuilder, Colors } = require("discord.js");
 const axios = require("axios");
 
@@ -28,19 +27,19 @@ module.exports = {
     userCooldowns[userId] = now;
 
     try {
-      // 🔗 Call new Meta-Ai API
+      // 🔗 Call Kaiz API
       const response = await axios.get(
-        `https://apis-keith.vercel.app/ai/metai?q=${encodeURIComponent(message.content)}`
+        `https://kaiz-apis.gleeze.com/api/llama3-turbo?ask=${encodeURIComponent(message.content)}&uid=${userId}&apikey=50ebc036-6604-46cd-ae13-0dcb52958bc8`
       );
 
-      // ✅ Use response.data.response from new API
+      // ✅ Extract AI response
       const aiContent = response.data?.response?.trim() || "⚠️ No response from the API.";
 
       // Function to send embed message
       const sendEmbed = async (text) => {
         const embed = new EmbedBuilder()
           .setColor(Colors.Blue)
-          .setAuthor({ name: "Llama 3-Turbo" }) // ✅ Updated author
+          .setAuthor({ name: "Llama 3-Turbo" })
           .setDescription(text)
           .setFooter({ text: `Reply to ${message.author.tag}` })
           .setTimestamp();
