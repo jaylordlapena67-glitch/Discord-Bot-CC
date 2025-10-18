@@ -38,10 +38,13 @@ module.exports = {
       // Function to send embed safely
       const sendEmbed = async (text) => {
         const embed = new EmbedBuilder()
-          .setColor(Colors.Blurple)
-          .setTitle("🤖 GPT") // <-- AI name added here
+          .setColor(Colors.Purple)
+          .setTitle("GPT Response") // ✅ Just “GPT Response”
           .setDescription(text)
-          .setFooter({ text: `Reply to ${message.author.tag}`, iconURL: message.author.displayAvatarURL({ dynamic: true }) })
+          .setFooter({
+            text: `Reply to ${message.author.tag}`,
+            iconURL: message.author.displayAvatarURL({ dynamic: true })
+          })
           .setTimestamp();
         await message.reply({ embeds: [embed] });
       };
