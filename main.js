@@ -84,7 +84,7 @@ async function ensurePanelInChannel(channel) {
   if (!existing) await sendPanelToChannel(channel);
 }
 
-// === ALIGNED TIME CHECK (every 5,10,15...) ===
+// === ALIGNED TIME CHECK ===
 function getNextAlignedTime() {
   const now = new Date();
   const minute = now.getMinutes();
@@ -105,7 +105,6 @@ async function waitUntilNextAligned() {
 // === EMOJI DETECTION & NICKNAME LOGIC ===
 function extractEmojis(text) {
   if (!text) return [];
-  // Detect all emojis at the start of the role name
   const match = text.match(/^([\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F]+)/u);
   return match ? [...match[0]] : [];
 }
@@ -113,16 +112,14 @@ function extractEmojis(text) {
 async function applyHighestRoleEmoji(member) {
   if (!member.manageable) return;
   try {
-    // Find topmost role that starts with emojis
     const rolesWithEmoji = member.roles.cache
       .filter(role => extractEmojis(role.name).length > 0)
       .sort((a, b) => b.position - a.position);
 
     const topRole = rolesWithEmoji.first();
-    const emojis = topRole ? extractEmojis(topRole.name).slice(0, 2) : []; // max 2 emojis
+    const emojis = topRole ? extractEmojis(topRole.name).slice(0, 2) : [];
     const emojiSuffix = emojis.length > 0 ? ` ${emojis.join('')}` : '';
 
-    // Remove existing emojis before appending new ones
     const baseName = member.displayName.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F]+/gu, "").trim();
     const newNickname = `${baseName}${emojiSuffix}`;
 
@@ -151,13 +148,11 @@ client.once('ready', async () => {
   try { await loadSlashCommands(client); } catch (e) { console.warn('loadSlashCommands err', e); }
   try { loadEvents(client); } catch (e) { console.warn('loadEvents err', e); }
 
-  // ensure all panels exist
   for (const cid of ROLE_CHANNELS) {
     const channel = await client.channels.fetch(cid).catch(() => null);
     if (channel) await ensurePanelInChannel(channel);
   }
 
-  // periodic 5 min recheck
   setInterval(async () => {
     for (const cid of ROLE_CHANNELS) {
       const channel = await client.channels.fetch(cid).catch(() => null);
@@ -200,7 +195,6 @@ client.once('ready', async () => {
     }
   })();
 
-  // nickname emoji sync
   console.log("🔄 Checking and updating nicknames with emojis...");
   for (const guild of client.guilds.cache.values()) {
     const members = await guild.members.fetch();
@@ -271,25 +265,70 @@ client.on(Events.GuildMemberRemove, async (member) => {
   await channel.send({ embeds: [embed] });
 });
 
-// === MESSAGE: WFL + WARN ===
+// === MESSAGE HANDLER: WFL + WARN + PREFIX COMMANDS + GPT MODULE ===
+const GPT_CHANNEL_ID = "1428887115009360004"; // GPT-only channel
+const GPT_COOLDOWN_MS = 5000;
+const gptCooldowns = {};
+
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot || !message.guild) return;
 
+  // === WFL REACTION ===
   const wflRegex = /\b(?:win\s*or\s*lose|win\s*lose|w[\s\/\.\-]*f[\s\/\.\-]*l)\b/i;
   if (wflRegex.test(message.content)) {
     try { await message.react('🇼'); await message.react('🇫'); await message.react('🇱'); } catch {}
   }
 
+  // === WARNING MODULE ===
   try { await warnModule.handleEvent({ message }); } catch (err) { console.error(err); }
 
   const prefix = config.prefix;
-  if (!message.content.startsWith(prefix)) return;
-  const args = message.content.slice(prefix.length).trim().split(/\s+/);
+  const args = message.content.startsWith(prefix)
+    ? message.content.slice(prefix.length).trim().split(/\s+/)
+    : [];
   const commandName = args.shift()?.toLowerCase();
   const command = client.commands.get(commandName) || client.commands.find(cmd => cmd.config?.aliases?.includes(commandName));
-  if (!command) return;
+  if (command && message.content.startsWith(prefix)) {
+    try { await command.letStart({ args, message, discord: { client } }); } catch (error) { console.error(error); }
+    return;
+  }
 
-  try { await command.letStart({ args, message, discord: { client } }); } catch (error) { console.error(error); }
+  // === GPT MODULE AUTO-REPLY (no prefix required) ===
+  if (message.channel.id === GPT_CHANNEL_ID) {
+    const now = Date.now();
+    const userId = message.author.id;
+    if (gptCooldowns[userId] && now - gptCooldowns[userId] < GPT_COOLDOWN_MS) return;
+    gptCooldowns[userId] = now;
+
+    const typingMessage = await message.reply("🤖 Thinking");
+    let dotCount = 0;
+    const typingInterval = setInterval(async () => {
+      dotCount = (dotCount + 1) % 4;
+      const dots = ".".repeat(dotCount);
+      try { await typingMessage.edit(`🤖 Thinking${dots}`); } catch {}
+    }, 700);
+
+    try {
+      const axios = require('axios');
+      const response = await axios.get(
+        `https://api-rynxzei.onrender.com/api/pinoygpt?prompt=${encodeURIComponent(message.content)}&uid=${userId}`
+      );
+      const gptContent = response.data?.response || "⚠️ No response from the API.";
+      clearInterval(typingInterval);
+
+      const embed = new EmbedBuilder()
+        .setColor(Colors.Blurple)
+        .setDescription(gptContent)
+        .setFooter({ text: `Reply to ${message.author.tag}`, iconURL: message.author.displayAvatarURL({ dynamic: true }) })
+        .setTimestamp();
+
+      await typingMessage.edit({ content: null, embeds: [embed] });
+    } catch (err) {
+      clearInterval(typingInterval);
+      await typingMessage.edit("⚠️ Error contacting the GPT API. Please try again later.");
+      console.error("❌ GPT API Error:", err);
+    }
+  }
 });
 
 // === GUILD MEMBER UPDATE ===
