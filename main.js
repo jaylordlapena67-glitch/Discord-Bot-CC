@@ -172,18 +172,15 @@ client.once('ready', async () => {
 
   console.log('🔁 Role panel auto-check active (5m).');
 
-  // === PVBR & GAG auto-stock resume ===
   const pvbstock = client.commands.get("pvbstock");
   const gagstock = client.commands.get("gagstock");
   if (pvbstock?.onReady) await pvbstock.onReady(client);
   if (gagstock?.onReady) await gagstock.onReady(client);
 
-  // Start aligned check loop for auto-stock
   (async function alignedCheckLoop() {
     while (true) {
       await waitUntilNextAligned();
       console.log(`🕒 Aligned check started (${new Date().toLocaleTimeString()})`);
-
       const start = Date.now();
       let updated = false;
       const checkInterval = setInterval(async () => {
@@ -205,7 +202,6 @@ client.once('ready', async () => {
     }
   })();
 
-  // Update nicknames with emojis
   console.log("🔄 Checking and updating nicknames with emojis...");
   for (const guild of client.guilds.cache.values()) {
     const members = await guild.members.fetch();
@@ -222,27 +218,62 @@ client.on(Events.MessageDelete, async (message) => {
   if (channel) await sendPanelToChannel(channel);
 });
 
-// === ROLE BUTTON INTERACTION ===
+// === ROLE BUTTON INTERACTION (FIXED & IMPROVED) ===
+const cooldown = new Set();
+
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isButton()) return;
+
   const roleId = roleMap[interaction.customId];
   if (!roleId) return;
 
   const member = interaction.member;
+
+  // === COOLDOWN CHECK ===
+  if (cooldown.has(interaction.user.id)) {
+    return interaction.reply({
+      content: '⏳ Please wait a few seconds before toggling again.',
+      ephemeral: true
+    }).catch(() => {});
+  }
+
+  cooldown.add(interaction.user.id);
+  setTimeout(() => cooldown.delete(interaction.user.id), 3000);
+
   const hasRole = member.roles.cache.has(roleId);
 
   try {
+    await interaction.deferReply({ ephemeral: true });
+
     if (hasRole) {
       await member.roles.remove(roleId, 'Toggled via panel');
-      await interaction.reply({ content: `❌ Removed <@&${roleId}> from you.`, ephemeral: true });
+      await interaction.editReply(`❌ Removed <@&${roleId}> from you.`);
     } else {
       await member.roles.add(roleId, 'Toggled via panel');
-      await interaction.reply({ content: `✅ Added <@&${roleId}> to you.`, ephemeral: true });
+      await interaction.editReply(`✅ Added <@&${roleId}> to you.`);
     }
+
     await applyHighestRoleEmoji(member);
+
+    const logChannel = interaction.guild.channels.cache.get(LOG_CHANNEL_ID);
+    if (logChannel) {
+      const embed = new EmbedBuilder()
+        .setColor(hasRole ? Colors.Red : Colors.Green)
+        .setTitle('🎭 Role Panel Interaction')
+        .setDescription(`${interaction.user} ${hasRole ? 'removed' : 'added'} <@&${roleId}>`)
+        .setTimestamp();
+      logChannel.send({ embeds: [embed] }).catch(() => {});
+    }
+
   } catch (err) {
     console.error('Role toggle error:', err);
-    await interaction.reply({ content: '❌ Failed to toggle role.', ephemeral: true });
+    try {
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply('❌ Failed to toggle role.');
+      } else {
+        await interaction.reply({ content: '❌ Failed to toggle role.', ephemeral: true });
+      }
+    } catch {}
   }
 });
 
@@ -277,16 +308,13 @@ client.on(Events.GuildMemberRemove, async (member) => {
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot || !message.guild) return;
 
-  // === WFL REACTION ===
   const wflRegex = /\b(?:win\s*or\s*lose|win\s*lose|w[\s\/\.\-]*f[\s\/\.\-]*l)\b/i;
   if (wflRegex.test(message.content)) {
     try { await message.react('🇼'); await message.react('🇫'); await message.react('🇱'); } catch {}
   }
 
-  // === WARNING MODULE ===
   try { await warnModule.handleEvent({ message }); } catch (err) { console.error(err); }
 
-  // === PREFIX COMMANDS ===
   const prefix = config.prefix;
   if (message.content.startsWith(prefix)) {
     const args = message.content.slice(prefix.length).trim().split(/\s+/);
@@ -298,28 +326,23 @@ client.on(Events.MessageCreate, async (message) => {
     }
   }
 
-  // === GPT MODULE AUTO-REPLY ===
   if (gptModule && message.channel.id === gptModule.config.channelId) {
     try { await gptModule.letStart({ message }); } catch (err) { console.error("GPT module error:", err); }
   }
 
-// === META-AI MODULE AUTO-REPLY ===
-if (metaModule && message.channel.id === metaModule.config.channelId) {
-  try { await metaModule.letStart({ message }); } catch (err) { console.error("Meta-Ai module error:", err); }
-}
+  if (metaModule && message.channel.id === metaModule.config.channelId) {
+    try { await metaModule.letStart({ message }); } catch (err) { console.error("Meta-Ai module error:", err); }
+  }
 
-  // === ARIA-AI MODULE AUTO-REPLY ===
   if (ariaModule && message.channel.id === ARIA_CHANNEL_ID) {
     try { await ariaModule.letStart({ message }); } catch (err) { console.error("Aria-Ai module error:", err); }
   }
 });
 
-// === GUILD MEMBER UPDATE ===
 client.on(Events.GuildMemberUpdate, async (_, newMember) => {
   await applyHighestRoleEmoji(newMember);
 });
 
-// === ADMIN / MOD ACTION LOGGING ===
 client.on(Events.GuildAuditLogEntryCreate, async (entry) => {
   const logChannel = entry.guild.channels.cache.get(LOG_CHANNEL_ID);
   if (!logChannel) return;
@@ -327,7 +350,7 @@ client.on(Events.GuildAuditLogEntryCreate, async (entry) => {
   let description = '';
   switch (entry.action) {
     case 'MEMBER_ROLE_UPDATE':
-      description = `<@${entry.executor.id}> **updated roles** for <@${entry.target.id}>.\nRoles added: ${entry.changes?.filter(c => c.key === '$add')?.map(c => c.new?.map(r => `<@&${r.id}>`).join(', ')).join(', ') || 'None'}\nRoles removed: ${entry.changes?.filter(c => c.key === '$remove')?.map(c => c.new?.map(r => `<@&${r.id}>`).join(', ')).join(', ') || 'None'}`;
+      description = `<@${entry.executor.id}> **updated roles** for <@${entry.target.id}>.`;
       break;
     case 'MEMBER_BAN_ADD':
       description = `<@${entry.executor.id}> **banned** <@${entry.target.id}>.`;
@@ -342,7 +365,7 @@ client.on(Events.GuildAuditLogEntryCreate, async (entry) => {
       description = `<@${entry.executor.id}> **kicked** <@${entry.target.id}>.`;
       break;
     default:
-      return; // ignore other actions
+      return;
   }
 
   if (description) {
