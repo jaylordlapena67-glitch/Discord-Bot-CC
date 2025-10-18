@@ -122,24 +122,17 @@ module.exports = {
     const seedsText = this.formatItems(seeds);
     const gearText = this.formatItems(gear);
 
-    const RARITY_ROLES = { godly: "1427517104780869713", secret: "1427517229129404477" };
-    const pingRoles = [];
-    if (seeds.some(i => this.getRarity(i.name) === "godly" && (i.currentStock ?? 0) > 0))
-      pingRoles.push(RARITY_ROLES.godly);
-    if (seeds.some(i => this.getRarity(i.name) === "secret" && (i.currentStock ?? 0) > 0))
-      pingRoles.push(RARITY_ROLES.secret);
-
-    const ping = pingRoles.map(id => `<@&${id}>`).join(" ");
+    // ✅ Ping one role only if Godly or Secret exists
+    const hasSpecialStock = seeds.some(
+      i => ["godly", "secret"].includes(this.getRarity(i.name)) && (i.currentStock ?? 0) > 0
+    );
+    const ping = hasSpecialStock ? `<@&1426897330644189217>` : null;
 
     const privateServerChannelId = "1426903128565088357";
     const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
     const timeString = now.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" });
 
     let description = `**Seeds**\n${seedsText.slice(0, 1024) || "❌ Empty"}\n\n**Gear**\n${gearText.slice(0, 1024) || "❌ Empty"}`;
-
-    const hasSpecialStock = seeds.some(
-      i => ["godly", "secret"].includes(this.getRarity(i.name)) && (i.currentStock ?? 0) > 0
-    );
 
     if (hasSpecialStock) {
       description += `\n\n🎉 Join fast! Here's a private server list: <#${privateServerChannelId}>`;
@@ -150,7 +143,7 @@ module.exports = {
       .setDescription(description)
       .setColor(0xff0080);
 
-    await channel.send({ content: ping || null, embeds: [embed] });
+    await channel.send({ content: ping, embeds: [embed] });
     lastUpdatedAt = updatedAt;
   },
 
