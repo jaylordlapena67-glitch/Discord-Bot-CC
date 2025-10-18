@@ -82,15 +82,7 @@ async function applyHighestRoleEmoji(member) {
 
     if (member.displayName !== newNickname) {
       await member.setNickname(newNickname).catch(() => {});
-      const logChannel = member.guild.channels.cache.get(LOG_CHANNEL_ID);
-      if (logChannel) {
-        const embed = new EmbedBuilder()
-          .setColor(Colors.Blue)
-          .setTitle("🪄 Nickname Updated")
-          .setDescription(`**Member:** ${member.user.tag}\n**New Nickname:** ${newNickname}\n**Top Role:** ${topRole ? topRole.name : "None"}`)
-          .setTimestamp();
-        logChannel.send({ embeds: [embed] }).catch(() => {});
-      }
+      // ✅ Removed log completely
     }
   } catch (err) {
     console.error(`❌ Failed to apply emoji nickname for ${member.user.tag}:`, err);
@@ -163,7 +155,7 @@ client.on(Events.GuildMemberAdd, async (member) => {
     await channel.send({ embeds: [embed] });
   }
 
-  // Apply emoji nickname for new member
+  // Apply emoji nickname for new member silently
   await applyHighestRoleEmoji(member);
 });
 
