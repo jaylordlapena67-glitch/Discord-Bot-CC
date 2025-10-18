@@ -20,7 +20,7 @@ const warnModule = require('./modules/commands/warning.js');
 // === AI MODULES ===
 const gptModule = require('./modules/commands/gpt.js');
 const ariaModule = require('./modules/commands/airia.js');
-const metaModule = require('./modules/commands/metaai.js'); // 👈 NEW
+const metaModule = require('./modules/commands/metaai.js');
 
 // === CLIENT SETUP ===
 const client = new Client({
@@ -42,7 +42,7 @@ client.events = new Map();
 // === CHANNELS & ROLES ===
 const GAG_CHANNEL_ID = "1426904612861902868";
 const PVB_CHANNEL_ID = "1426904690343284847";
-const ARIA_CHANNEL_ID = "1428927739431227503"; // Aria-Ai channel
+const ARIA_CHANNEL_ID = "1428927739431227503";
 const ROLE_CHANNELS = [GAG_CHANNEL_ID, PVB_CHANNEL_ID];
 
 const roleMap = {
@@ -94,25 +94,7 @@ async function ensurePanelInChannel(channel) {
   if (!existing) await sendPanelToChannel(channel);
 }
 
-// === ALIGNED TIME CHECK FOR STOCK ===
-function getNextAlignedTime() {
-  const now = new Date();
-  const minute = now.getMinutes();
-  const nextMinute = Math.ceil(minute / 5) * 5;
-  const next = new Date(now);
-  next.setMinutes(nextMinute === 60 ? 0 : nextMinute, 0, 0);
-  if (nextMinute === 60) next.setHours(now.getHours() + 1);
-  return next;
-}
-
-async function waitUntilNextAligned() {
-  const next = getNextAlignedTime();
-  const delay = next.getTime() - Date.now();
-  console.log(`⏳ Waiting until ${next.toLocaleTimeString()} to start stock check...`);
-  await new Promise(res => setTimeout(res, delay));
-}
-
-// === EMOJI DETECTION & NICKNAME LOGIC ===
+// === EMOJI NICKNAME ===
 function extractEmojis(text) {
   if (!text) return [];
   const match = text.match(/^([\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F]+)/u);
@@ -153,7 +135,6 @@ async function applyHighestRoleEmoji(member) {
 // === READY EVENT ===
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
-
   try { loadCommands(client); } catch (e) { console.warn('loadCommands err', e); }
   try { await loadSlashCommands(client); } catch (e) { console.warn('loadSlashCommands err', e); }
   try { loadEvents(client); } catch (e) { console.warn('loadEvents err', e); }
@@ -177,40 +158,15 @@ client.once('ready', async () => {
   if (pvbstock?.onReady) await pvbstock.onReady(client);
   if (gagstock?.onReady) await gagstock.onReady(client);
 
-  (async function alignedCheckLoop() {
-    while (true) {
-      await waitUntilNextAligned();
-      console.log(`🕒 Aligned check started (${new Date().toLocaleTimeString()})`);
-      const start = Date.now();
-      let updated = false;
-      const checkInterval = setInterval(async () => {
-        const diff = (Date.now() - start) / 1000;
-        if (pvbstock?.checkForUpdate && gagstock?.checkForUpdate) {
-          const pvbChanged = await pvbstock.checkForUpdate(client);
-          const gagChanged = await gagstock.checkForUpdate(client);
-          if (pvbChanged || gagChanged) {
-            updated = true;
-            clearInterval(checkInterval);
-            console.log("✅ Stock updated — notifications sent!");
-          }
-        }
-        if (diff > 240 && !updated) {
-          console.log("⌛ No stock update found — waiting for next aligned time.");
-          clearInterval(checkInterval);
-        }
-      }, 1000);
-    }
-  })();
-
-  console.log("🔄 Checking and updating nicknames with emojis...");
+  console.log("🔄 Syncing nickname emojis...");
   for (const guild of client.guilds.cache.values()) {
     const members = await guild.members.fetch();
     for (const member of members.values()) await applyHighestRoleEmoji(member);
   }
-  console.log("✅ Nickname emojis updated for all members!");
+  console.log("✅ Nickname emojis synced!");
 });
 
-// === AUTO RECREATE PANEL IF DELETED ===
+// === AUTO RECREATE PANEL ===
 client.on(Events.MessageDelete, async (message) => {
   if (!message?.content?.includes(PANEL_MARKER)) return;
   if (!ROLE_CHANNELS.includes(message.channelId)) return;
@@ -218,96 +174,65 @@ client.on(Events.MessageDelete, async (message) => {
   if (channel) await sendPanelToChannel(channel);
 });
 
-// === ROLE BUTTON INTERACTION (FIXED & IMPROVED) ===
-const cooldown = new Set();
-
+// === ✅ OLD WORKING ROLE INTERACTION ===
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isButton()) return;
-
   const roleId = roleMap[interaction.customId];
   if (!roleId) return;
 
   const member = interaction.member;
-
-  // === COOLDOWN CHECK ===
-  if (cooldown.has(interaction.user.id)) {
-    return interaction.reply({
-      content: '⏳ Please wait a few seconds before toggling again.',
-      ephemeral: true
-    }).catch(() => {});
-  }
-
-  cooldown.add(interaction.user.id);
-  setTimeout(() => cooldown.delete(interaction.user.id), 3000);
-
   const hasRole = member.roles.cache.has(roleId);
 
   try {
-    await interaction.deferReply({ ephemeral: true });
-
     if (hasRole) {
       await member.roles.remove(roleId, 'Toggled via panel');
-      await interaction.editReply(`❌ Removed <@&${roleId}> from you.`);
+      await interaction.reply({ content: `❌ Removed <@&${roleId}> from you.`, ephemeral: true });
     } else {
       await member.roles.add(roleId, 'Toggled via panel');
-      await interaction.editReply(`✅ Added <@&${roleId}> to you.`);
+      await interaction.reply({ content: `✅ Added <@&${roleId}> to you.`, ephemeral: true });
     }
-
     await applyHighestRoleEmoji(member);
-
-    const logChannel = interaction.guild.channels.cache.get(LOG_CHANNEL_ID);
-    if (logChannel) {
-      const embed = new EmbedBuilder()
-        .setColor(hasRole ? Colors.Red : Colors.Green)
-        .setTitle('🎭 Role Panel Interaction')
-        .setDescription(`${interaction.user} ${hasRole ? 'removed' : 'added'} <@&${roleId}>`)
-        .setTimestamp();
-      logChannel.send({ embeds: [embed] }).catch(() => {});
-    }
-
   } catch (err) {
     console.error('Role toggle error:', err);
-    try {
-      if (interaction.deferred || interaction.replied) {
-        await interaction.editReply('❌ Failed to toggle role.');
-      } else {
-        await interaction.reply({ content: '❌ Failed to toggle role.', ephemeral: true });
-      }
-    } catch {}
+    await interaction.reply({ content: '❌ Failed to toggle role.', ephemeral: true });
   }
 });
 
-// === WELCOME / GOODBYE ===
+// === ✅ OLD WELCOME / GOODBYE (RESTORED) ===
 client.on(Events.GuildMemberAdd, async (member) => {
   const channel = member.guild.channels.cache.get(WELCOME_CHANNEL);
-  if (channel) {
-    const embed = new EmbedBuilder()
-      .setColor(Colors.Green)
-      .setTitle(`👋 Welcome ${member.user.tag}!`)
-      .setDescription(`Glad to have you here, <@${member.id}>! 🎉`)
-      .addFields({ name: 'Member Count', value: `${member.guild.memberCount}`, inline: true })
-      .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
-      .setTimestamp();
-    await channel.send({ embeds: [embed] });
-  }
+  if (!channel) return;
+
+  const embed = new EmbedBuilder()
+    .setColor(Colors.Green)
+    .setTitle('👋 Welcome!')
+    .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+    .setDescription(`Welcome to **${member.guild.name}**, ${member}! 🎉\nWe now have **${member.guild.memberCount} members**!`)
+    .setFooter({ text: 'Glad to have you here!' })
+    .setTimestamp();
+
+  channel.send({ embeds: [embed] }).catch(() => {});
   await applyHighestRoleEmoji(member);
 });
 
 client.on(Events.GuildMemberRemove, async (member) => {
   const channel = member.guild.channels.cache.get(GOODBYE_CHANNEL);
   if (!channel) return;
+
   const embed = new EmbedBuilder()
     .setColor(Colors.Red)
-    .setTitle(`😢 ${member.user.tag} left the server`)
-    .addFields({ name: 'Member Count', value: `${member.guild.memberCount}`, inline: true })
+    .setTitle('😢 Goodbye!')
+    .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+    .setDescription(`${member.user.tag} has left the server.\nWe now have **${member.guild.memberCount} members** left.`)
+    .setFooter({ text: 'We’ll miss you!' })
     .setTimestamp();
-  await channel.send({ embeds: [embed] });
+
+  channel.send({ embeds: [embed] }).catch(() => {});
 });
 
 // === MESSAGE HANDLER ===
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot || !message.guild) return;
-
   const wflRegex = /\b(?:win\s*or\s*lose|win\s*lose|w[\s\/\.\-]*f[\s\/\.\-]*l)\b/i;
   if (wflRegex.test(message.content)) {
     try { await message.react('🇼'); await message.react('🇫'); await message.react('🇱'); } catch {}
@@ -339,43 +264,41 @@ client.on(Events.MessageCreate, async (message) => {
   }
 });
 
+// === GUILD MEMBER UPDATE ===
 client.on(Events.GuildMemberUpdate, async (_, newMember) => {
   await applyHighestRoleEmoji(newMember);
 });
 
+// === ADMIN LOGS ===
 client.on(Events.GuildAuditLogEntryCreate, async (entry) => {
   const logChannel = entry.guild.channels.cache.get(LOG_CHANNEL_ID);
   if (!logChannel) return;
-
   let description = '';
   switch (entry.action) {
     case 'MEMBER_ROLE_UPDATE':
-      description = `<@${entry.executor.id}> **updated roles** for <@${entry.target.id}>.`;
+      description = `<@${entry.executor.id}> updated roles for <@${entry.target.id}>.`;
       break;
     case 'MEMBER_BAN_ADD':
-      description = `<@${entry.executor.id}> **banned** <@${entry.target.id}>.`;
+      description = `<@${entry.executor.id}> banned <@${entry.target.id}>.`;
       break;
     case 'MEMBER_BAN_REMOVE':
-      description = `<@${entry.executor.id}> **unbanned** <@${entry.target.id}>.`;
+      description = `<@${entry.executor.id}> unbanned <@${entry.target.id}>.`;
       break;
     case 'MEMBER_UPDATE':
-      description = `<@${entry.executor.id}> **updated member** <@${entry.target.id}>.`;
+      description = `<@${entry.executor.id}> updated member <@${entry.target.id}>.`;
       break;
     case 'MEMBER_KICK':
-      description = `<@${entry.executor.id}> **kicked** <@${entry.target.id}>.`;
+      description = `<@${entry.executor.id}> kicked <@${entry.target.id}>.`;
       break;
     default:
       return;
   }
-
-  if (description) {
-    const embed = new EmbedBuilder()
-      .setColor(Colors.Orange)
-      .setTitle('🛡️ Admin Action')
-      .setDescription(description)
-      .setTimestamp();
-    logChannel.send({ embeds: [embed] }).catch(() => {});
-  }
+  const embed = new EmbedBuilder()
+    .setColor(Colors.Orange)
+    .setTitle('🛡️ Admin Action')
+    .setDescription(description)
+    .setTimestamp();
+  logChannel.send({ embeds: [embed] }).catch(() => {});
 });
 
 // === LOGIN ===
