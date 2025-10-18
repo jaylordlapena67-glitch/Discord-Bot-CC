@@ -139,6 +139,33 @@ client.once('ready', async () => {
   console.log("✅ Nickname emojis updated for all members!");
 });
 
+// === AUTO SEND NOTIFICATION EMBED ===
+  try {
+    const notifChannelId = '1429087581496279201';
+    const notifChannel = client.channels.cache.get(notifChannelId);
+
+    if (notifChannel) {
+      // Optional: Delete last bot message to keep it clean
+      const messages = await notifChannel.messages.fetch({ limit: 5 });
+      const lastBotMsg = messages.find(m => m.author.id === client.user.id);
+      if (lastBotMsg) await lastBotMsg.delete().catch(() => {});
+
+      const notifEmbed = new EmbedBuilder()
+        .setColor(0x5865F2)
+        .setTitle('📢 𝐏𝐈𝐂𝐊 𝐒𝐓𝐎𝐂𝐊 𝐍𝐎𝐓𝐈𝐅𝐈𝐂𝐀𝐓𝐈𝐎𝐍𝐒 𝐇𝐄𝐑𝐄')
+        .setDescription('> ✨ **Select the roles you want notifications for!**\n\n[🔗 𝐂𝐡𝐚𝐧𝐧𝐞𝐥𝐬 ＆ 𝐑𝐨𝐥𝐞𝐬](https://discord.com/channels/1426897330644189217/customize-community)')
+        .setFooter({ text: 'Choose the roles to get notified on updates!' })
+        .setTimestamp();
+
+      await notifChannel.send({ embeds: [notifEmbed] });
+      console.log("✅ Notification embed sent to #select-notifs!");
+    } else {
+      console.warn("⚠️ Notification channel not found!");
+    }
+  } catch (err) {
+    console.error("❌ Failed to send notification embed:", err);
+  }
+
 // === MEMBER EVENTS ===
 
 // 🔹 When new member joins
