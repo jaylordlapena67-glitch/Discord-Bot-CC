@@ -143,10 +143,7 @@ module.exports = {
     for (const item of items) {
       const name = item.name.replace(/ Seed$/i, "").trim();
       const stock = item.currentStock ?? 0;
-
-      if (stock > 0 && ITEM_ROLES[name]) {
-        pingRoles.push(ITEM_ROLES[name]);
-      }
+      if (stock > 0 && ITEM_ROLES[name]) pingRoles.push(ITEM_ROLES[name]);
     }
 
     const uniquePings = [...new Set(pingRoles)];
@@ -156,7 +153,9 @@ module.exports = {
     const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
     const timeString = now.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" });
 
-    let description = `**Seeds**\n${seedsText.slice(0, 1024) || "❌ Empty"}\n\n**Gear**\n${gearText.slice(0, 1024) || "❌ Empty"}\n\n🏃‍♂️ **Join Fast! Here’s the list of private server!** <#${privateServerChannelId}>`;
+    const description = `**Seeds**\n${seedsText.slice(0, 1024) || "❌ Empty"}\n\n**Gear**\n${
+      gearText.slice(0, 1024) || "❌ Empty"
+    }\n\n🏃‍♂️ **Join Fast! Here’s the list of private server!** <#${privateServerChannelId}>`;
 
     const embed = new EmbedBuilder()
       .setTitle(`Plants vs Brainrots Stock - ${timeString}`)
@@ -167,8 +166,9 @@ module.exports = {
     lastUpdatedAt = updatedAt;
   },
 
-  async checkForUpdate(client, guild) {
+  async checkForUpdate(client) {
     try {
+      const guild = client.guilds.cache.first();
       const channelId = (await getData("pvbstock/discord"))?.[guild.id]?.channelId;
       if (!channelId) return false;
 
@@ -233,6 +233,7 @@ module.exports = {
     }
   },
 
+  // 🧭 Fixed and optimized version — no spam
   async onReady(client) {
     console.log("🔁 PVBR module ready — fetching latest stock timestamp...");
     try {
@@ -240,7 +241,6 @@ module.exports = {
       if (updatedAt) lastUpdatedAt = updatedAt;
       console.log("✅ LastUpdatedAt set to:", lastUpdatedAt);
 
-      // 🕒 Function: get time (ms) until next aligned 5-minute mark
       function getMsUntilNext5Min() {
         const now = new Date();
         const minutes = now.getMinutes();
@@ -249,8 +249,11 @@ module.exports = {
         return next - now;
       }
 
-      // 🔁 1-second checking loop (stops when update detected)
+      let isChecking = false;
+
       const startSecondCheck = async () => {
+        if (isChecking) return;
+        isChecking = true;
         console.log("🕐 Starting 1-second check for stock update...");
         const interval = setInterval(async () => {
           const { updatedAt: current } = await module.exports.fetchPVBRStock();
@@ -259,19 +262,26 @@ module.exports = {
             for (const guild of client.guilds.cache.values()) {
               await module.exports.checkForUpdate(client, guild);
             }
+            lastUpdatedAt = current;
             clearInterval(interval);
+            isChecking = false;
             console.log("✅ Update sent, waiting for next 5-minute mark...");
           }
         }, 1000);
       };
 
-      // 🔄 Main 5-minute scheduler
       const loop = async () => {
         const waitTime = getMsUntilNext5Min();
-        console.log(`⏳ Waiting ${Math.round(waitTime / 1000)}s until next 5-minute mark...`);
+        const nextTime = new Date(Date.now() + waitTime);
+        console.log(
+          `⏳ Next check at ${nextTime.toLocaleTimeString("en-PH", {
+            hour: "2-digit",
+            minute: "2-digit",
+          })} (in ${Math.round(waitTime / 1000)}s)`
+        );
         setTimeout(async () => {
           await startSecondCheck();
-          loop(); // repeat for next cycle
+          loop();
         }, waitTime);
       };
 
