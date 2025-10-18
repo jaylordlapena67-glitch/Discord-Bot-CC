@@ -23,6 +23,21 @@ module.exports = {
     "Water Bucket": "🪣💧",
     "Frost Grenade": "🧊💣",
     "Banana Gun": "🍌🔫",
+    Eggplant: "🍆",
+    Watermelon: "🍉✨",
+    Grape: "🍇✨",
+    Cocotank: "🥥🛡️",
+    "Carnivorous Plant": "🪴🦷",
+    "King Limone": "🍋",
+    Mango: "🥭",
+    "Mr Carrot": "🥕🎩",
+    Tomatrio: "🍅👨‍👦‍👦",
+    Shroombino: "🍄🎭",
+    Bat: "⚾",
+    "Frost Blower": "❄️🌬️",
+    "Lucky Potion": "🍀🧪",
+    "Speed Potion": "⚡🧪",
+    "Carrot Launcher": "🥕🚀",
   },
 
   CATEGORY_EMOJI: {
@@ -37,22 +52,39 @@ module.exports = {
   },
 
   MANUAL_RARITY: {
-    Cactus: "common",
-    Strawberry: "common",
-    Pumpkin: "common",
-    Sunflower: "common",
-    "Dragon Fruit": "common",
+    Cactus: "rare",
+    Strawberry: "rare",
+    Pumpkin: "epic",
+    Sunflower: "epic",
+    "Dragon Fruit": "legendary",
+    Eggplant: "legendary",
+    Watermelon: "mythic",
+    Grape: "mythic",
+    Cocotank: "godly",
+    "Carnivorous Plant": "godly",
+    "King Limone": "secret",
+    Mango: "secret",
+    "Mr Carrot": "secret",
+    Tomatrio: "secret",
+    Shroombino: "secret",
+    Bat: "common",
     "Water Bucket": "epic",
     "Frost Grenade": "epic",
     "Banana Gun": "epic",
+    "Frost Blower": "legendary",
+    "Lucky Potion": "legendary",
+    "Speed Potion": "legendary",
+    "Carrot Launcher": "godly",
   },
 
   getRarity(name) {
-    return this.MANUAL_RARITY[name.replace(/ Seed$/i, "")] || "unknown";
+    const cleanName = name.replace(/ Seed$/i, "").trim();
+    return this.MANUAL_RARITY[cleanName] || "unknown";
   },
 
   getEmoji(name) {
-    return this.ITEM_EMOJI[name.replace(/ Seed$/i, "")] || "❔";
+    const cleanName = name.replace(/ Seed$/i, "").trim();
+    return this.ITEM_EMOJI[cleanName] || "❔";
   },
 
   formatItems(items) {
@@ -75,10 +107,10 @@ module.exports = {
   async fetchPVBRStock() {
     try {
       const res = await axios.get("https://plantsvsbrainrotsstocktracker.com/api/stock?since=0");
-      return res.data || { items: [], updatedAt: null };
+      return res.data || {};
     } catch (e) {
       console.error("❌ Error fetching PVBR stock:", e);
-      return { items: [], updatedAt: null };
+      return {};
     }
   },
 
@@ -86,18 +118,20 @@ module.exports = {
     const { items, updatedAt } = await this.fetchPVBRStock();
     if (!items?.length) return channel.send("⚠️ Failed to fetch PVBR stock.");
 
-    // Filter items by category
+    // Filter by category from API
     const seeds = items.filter(i => i.category === "seed");
     const gear = items.filter(i => i.category === "gear");
 
     const seedsText = this.formatItems(seeds);
     const gearText = this.formatItems(gear);
 
-    // Ping for special stock
     const RARITY_ROLES = { godly: "1426897330644189217", secret: "1426897330644189217" };
     const pingRoles = [];
-    if (seeds.some(i => ["godly","secret"].includes(this.getRarity(i.name)) && (i.currentStock ?? 0) > 0))
-      pingRoles.push(...Object.values(RARITY_ROLES));
+
+    if (seeds.some(i => this.getRarity(i.name) === "godly" && (i.currentStock ?? 0) > 0))
+      pingRoles.push(RARITY_ROLES.godly);
+    if (seeds.some(i => this.getRarity(i.name) === "secret" && (i.currentStock ?? 0) > 0))
+      pingRoles.push(RARITY_ROLES.secret);
 
     const ping = pingRoles.map(id => `<@&${id}>`).join(" ");
 
@@ -105,7 +139,7 @@ module.exports = {
     const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
     const timeString = now.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" });
 
-    let description = `**Seeds**\n${seedsText || "❌ Empty"}\n\n**Gear**\n${gearText || "❌ Empty"}`;
+    let description = `**Seeds**\n${seedsText.slice(0, 1024) || "❌ Empty"}\n\n**Gear**\n${gearText.slice(0, 1024) || "❌ Empty"}`;
 
     const hasSpecialStock = seeds.some(
       i => ["godly", "secret"].includes(this.getRarity(i.name)) && (i.currentStock ?? 0) > 0
@@ -126,18 +160,17 @@ module.exports = {
 
   async checkForUpdate(client) {
     try {
-      const allData = (await getData("pvbstock/discord")) || {};
-      for (const [guildId, guildData] of Object.entries(allData)) {
-        if (!guildData.enabled || !guildData.channelId) continue;
+      const guild = client.guilds.cache.first();
+      const channelId = (await getData("pvbstock/discord"))?.[guild.id]?.channelId;
+      if (!channelId) return false;
 
-        const channel = await client.channels.fetch(guildData.channelId).catch(() => null);
-        if (!channel) continue;
+      const channel = await client.channels.fetch(channelId).catch(() => null);
+      if (!channel) return false;
 
-        const { updatedAt } = await this.fetchPVBRStock();
-        if (!updatedAt || updatedAt === lastUpdatedAt) continue;
+      const { updatedAt } = await this.fetchPVBRStock();
+      if (!updatedAt || updatedAt === lastUpdatedAt) return false;
 
-        await this.sendStock(channel);
-      }
+      await this.sendStock(channel);
       return true;
     } catch (err) {
       console.error("❌ PVBR checkForUpdate error:", err);
@@ -199,10 +232,11 @@ module.exports = {
       if (updatedAt) lastUpdatedAt = updatedAt;
       console.log("✅ LastUpdatedAt set to:", lastUpdatedAt);
 
-      // Check for updates every 10 seconds
       setInterval(async () => {
-        await this.checkForUpdate(client);
-      }, 10000);
+        for (const guild of client.guilds.cache.values()) {
+          await this.checkForUpdate(client);
+        }
+      }, 1000);
     } catch (err) {
       console.error("❌ Error initializing PVBR loop:", err);
     }
