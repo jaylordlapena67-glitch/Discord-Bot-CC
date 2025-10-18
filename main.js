@@ -20,6 +20,7 @@ const warnModule = require('./modules/commands/warning.js');
 // === AI MODULES ===
 const gptModule = require('./modules/commands/gpt.js');
 const ariaModule = require('./modules/commands/airia.js');
+const metaModule = require('./modules/commands/metaai.js'); // 👈 NEW
 
 // === CLIENT SETUP ===
 const client = new Client({
@@ -301,6 +302,11 @@ client.on(Events.MessageCreate, async (message) => {
   if (gptModule && message.channel.id === gptModule.config.channelId) {
     try { await gptModule.letStart({ message }); } catch (err) { console.error("GPT module error:", err); }
   }
+
+// === META-AI MODULE AUTO-REPLY ===
+if (metaModule && message.channel.id === metaModule.config.channelId) {
+  try { await metaModule.letStart({ message }); } catch (err) { console.error("Meta-Ai module error:", err); }
+}
 
   // === ARIA-AI MODULE AUTO-REPLY ===
   if (ariaModule && message.channel.id === ARIA_CHANNEL_ID) {
