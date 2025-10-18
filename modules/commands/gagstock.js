@@ -4,9 +4,9 @@ const path = require("path");
 
 module.exports.config = {
   name: "gagstock",
-  version: "2.4.0",
+  version: "2.6.0",
   credits: "Jaz La Peña + ChatGPT",
-  description: "Auto-check Grow a Garden stock with split Discord updates",
+  description: "Auto-check Grow a Garden stock with summary + split Discord updates",
 };
 
 const STOCK_FILE = path.join(__dirname, "gag_latest_stock.json");
@@ -74,7 +74,7 @@ function getChanges(oldStock, newStock) {
   return Object.keys(changes).length > 0 ? changes : null;
 }
 
-// ✅ Send stock updates with automatic splitting
+// ✅ Send stock updates with summary + robust splitting
 async function sendStockUpdate(client, changes) {
   let channel = client.channels.cache.get(CHANNEL_ID);
   if (!channel) {
@@ -87,9 +87,19 @@ async function sendStockUpdate(client, changes) {
   }
 
   const time = new Date().toLocaleTimeString();
-  let msg = `🪴 **Grow a Garden Stock Update (${time})**\n`;
+
+  // Count updated and removed items
+  let updatedCount = 0;
+  let removedCount = 0;
+  for (const value of Object.values(changes)) {
+    if (value === null) removedCount++;
+    else updatedCount++;
+  }
+
+  const header = `🪴 **Grow a Garden Stock Update (${time})** — ${updatedCount} updated, ${removedCount} removed\n`;
   const lines = [];
 
+  // Build lines for each change
   for (const [item, value] of Object.entries(changes)) {
     if (value === null) {
       lines.push(`❌ Removed: **${item}**`);
@@ -100,12 +110,12 @@ async function sendStockUpdate(client, changes) {
     }
   }
 
-  // Split into chunks under 4000 characters
-  let chunk = msg;
+  // Split lines into multiple messages under 4000 characters
+  let chunk = header;
   for (const line of lines) {
-    if ((chunk + "\n" + line).length > 3900) { // buffer to avoid hitting 4000
+    if ((chunk.length + line.length + 1) > 3900) { // buffer for safety
       await channel.send(chunk);
-      chunk = line;
+      chunk = line; // start new chunk
     } else {
       chunk += "\n" + line;
     }
