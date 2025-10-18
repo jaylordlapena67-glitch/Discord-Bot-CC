@@ -97,7 +97,7 @@ module.exports = {
         `• ${this.getEmoji(i.name)} **${i.name.replace(/ Seed$/i, "")}** (${i.currentStock ?? "?"})`
       );
     }
-    const order = ["common","rare","epic","legendary","mythic","godly","secret","unknown"];
+    const order = ["common", "rare", "epic", "legendary", "mythic", "godly", "secret", "unknown"];
     return order
       .filter(cat => grouped[cat])
       .map(cat => `[${this.CATEGORY_EMOJI[cat]} ${cat.toUpperCase()}]\n${grouped[cat].join("\n")}`)
@@ -125,15 +125,34 @@ module.exports = {
     const seedsText = this.formatItems(seeds);
     const gearText = this.formatItems(gear);
 
-    const RARITY_ROLES = { godly: "1426897330644189217", secret: "1426897330644189217" };
+    // ✅ Only ping specific roles (from provided list)
+    const ITEM_ROLES = {
+      "King Limone": "1429082109934309470",
+      "Mango": "1429082598121930783",
+      "Shroombino": "1429082733581303869",
+      "Tomatrio": "1429082909460922508",
+      "Mr Carrot": "1429083035982233641",
+      "Carnivorous Plant": "1429083268925493440",
+      "Cocotank": "1429083369609625640",
+      "Grape": "1429083522722828379",
+      "Watermelon": "1429083636921270292",
+      "Eggplant": "1429083760560963768",
+      "Dragon Fruit": "1429083864638423050",
+    };
+
     const pingRoles = [];
 
-    if (seeds.some(i => this.getRarity(i.name) === "godly" && (i.currentStock ?? 0) > 0))
-      pingRoles.push(RARITY_ROLES.godly);
-    if (seeds.some(i => this.getRarity(i.name) === "secret" && (i.currentStock ?? 0) > 0))
-      pingRoles.push(RARITY_ROLES.secret);
+    for (const item of items) {
+      const name = item.name.replace(/ Seed$/i, "").trim();
+      const stock = item.currentStock ?? 0;
 
-    const ping = pingRoles.map(id => `<@&${id}>`).join(" ");
+      if (stock > 0 && ITEM_ROLES[name]) {
+        pingRoles.push(ITEM_ROLES[name]);
+      }
+    }
+
+    const uniquePings = [...new Set(pingRoles)];
+    const ping = uniquePings.map(id => `<@&${id}>`).join(" ");
 
     const privateServerChannelId = "1426903128565088357";
     const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
@@ -141,12 +160,9 @@ module.exports = {
 
     let description = `**Seeds**\n${seedsText.slice(0, 1024) || "❌ Empty"}\n\n**Gear**\n${gearText.slice(0, 1024) || "❌ Empty"}`;
 
-    const hasSpecialStock = seeds.some(
-      i => ["godly", "secret"].includes(this.getRarity(i.name)) && (i.currentStock ?? 0) > 0
-    );
-
-    if (hasSpecialStock) {
-      description += `\n\n🎉 Join fast! Here's a private server list: <#${privateServerChannelId}>`;
+    const hasStockPing = uniquePings.length > 0;
+    if (hasStockPing) {
+      description += `\n\n🎉 Some items are in stock! Check them out below 👇`;
     }
 
     const embed = new EmbedBuilder()
