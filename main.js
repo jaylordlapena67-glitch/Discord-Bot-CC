@@ -144,6 +144,7 @@ client.once('ready', async () => {
     if (channel) await ensurePanelInChannel(channel);
   }
 
+  // Auto-check every 5 minutes
   setInterval(async () => {
     for (const cid of ROLE_CHANNELS) {
       const channel = await client.channels.fetch(cid).catch(() => null);
@@ -152,11 +153,6 @@ client.once('ready', async () => {
   }, 5 * 60 * 1000);
 
   console.log('🔁 Role panel auto-check active (5m).');
-
-  const pvbstock = client.commands.get("pvbstock");
-  const gagstock = client.commands.get("gagstock");
-  if (pvbstock?.onReady) await pvbstock.onReady(client);
-  if (gagstock?.onReady) await gagstock.onReady(client);
 
   console.log("🔄 Syncing nickname emojis...");
   for (const guild of client.guilds.cache.values()) {
@@ -168,13 +164,25 @@ client.once('ready', async () => {
 
 // === AUTO RECREATE PANEL ===
 client.on(Events.MessageDelete, async (message) => {
-  if (!message?.content?.includes(PANEL_MARKER)) return;
+  if (!message.guild) return;
   if (!ROLE_CHANNELS.includes(message.channelId)) return;
-  const channel = await client.channels.fetch(message.channelId).catch(() => null);
-  if (channel) await sendPanelToChannel(channel);
+  if (message.content?.includes(PANEL_MARKER)) {
+    const channel = await client.channels.fetch(message.channelId).catch(() => null);
+    if (channel) {
+      console.log(`♻️ Recreating deleted role panel in #${channel.name}`);
+      await sendPanelToChannel(channel);
+    }
+  } else {
+    // Double safety: if last panel is gone, recreate
+    const channel = await client.channels.fetch(message.channelId).catch(() => null);
+    if (!channel) return;
+    const msgs = await channel.messages.fetch({ limit: 20 }).catch(() => null);
+    const exists = msgs?.some(m => m.content?.includes(PANEL_MARKER));
+    if (!exists) await sendPanelToChannel(channel);
+  }
 });
 
-// === ✅ OLD WORKING ROLE INTERACTION ===
+// === ROLE INTERACTION ===
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isButton()) return;
   const roleId = roleMap[interaction.customId];
@@ -198,7 +206,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
-// === ✅ OLD WELCOME / GOODBYE (RESTORED) ===
+// === WELCOME / GOODBYE ===
 client.on(Events.GuildMemberAdd, async (member) => {
   const channel = member.guild.channels.cache.get(WELCOME_CHANNEL);
   if (!channel) return;
@@ -251,20 +259,17 @@ client.on(Events.MessageCreate, async (message) => {
     }
   }
 
-  if (gptModule && message.channel.id === gptModule.config.channelId) {
+  if (gptModule && message.channel.id === gptModule.config.channelId)
     try { await gptModule.letStart({ message }); } catch (err) { console.error("GPT module error:", err); }
-  }
 
-  if (metaModule && message.channel.id === metaModule.config.channelId) {
+  if (metaModule && message.channel.id === metaModule.config.channelId)
     try { await metaModule.letStart({ message }); } catch (err) { console.error("Meta-Ai module error:", err); }
-  }
 
-  if (ariaModule && message.channel.id === ARIA_CHANNEL_ID) {
+  if (ariaModule && message.channel.id === ARIA_CHANNEL_ID)
     try { await ariaModule.letStart({ message }); } catch (err) { console.error("Aria-Ai module error:", err); }
-  }
 });
 
-// === GUILD MEMBER UPDATE ===
+// === MEMBER UPDATE ===
 client.on(Events.GuildMemberUpdate, async (_, newMember) => {
   await applyHighestRoleEmoji(newMember);
 });
