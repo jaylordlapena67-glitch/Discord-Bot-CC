@@ -39,6 +39,7 @@ module.exports = {
       const sendEmbed = async (text) => {
         const embed = new EmbedBuilder()
           .setColor(Colors.Blurple)
+          .setTitle("🤖 GPT") // <-- AI name added here
           .setDescription(text)
           .setFooter({ text: `Reply to ${message.author.tag}`, iconURL: message.author.displayAvatarURL({ dynamic: true }) })
           .setTimestamp();
