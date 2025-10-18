@@ -82,7 +82,6 @@ async function applyHighestRoleEmoji(member) {
 
     if (member.displayName !== newNickname) {
       await member.setNickname(newNickname).catch(() => {});
-      // ✅ Removed log completely
     }
   } catch (err) {
     console.error(`❌ Failed to apply emoji nickname for ${member.user.tag}:`, err);
@@ -140,15 +139,16 @@ client.once('ready', async () => {
 
   // === AUTO SEND NOTIFICATION EMBED ===
   try {
-    const notifChannelId = '1429087581496279201';
+    const notifChannelId = '1429087581496279201'; // Channel where to send embed
     const notifChannel = client.channels.cache.get(notifChannelId);
 
     if (notifChannel) {
-      // Optional: Delete last bot message to keep it clean
+      // Delete last bot message to keep channel clean
       const messages = await notifChannel.messages.fetch({ limit: 5 });
       const lastBotMsg = messages.find(m => m.author.id === client.user.id);
       if (lastBotMsg) await lastBotMsg.delete().catch(() => {});
 
+      // Embed content
       const notifEmbed = new EmbedBuilder()
         .setColor(0x5865F2)
         .setTitle('📢 𝐏𝐈𝐂𝐊 𝐒𝐓𝐎𝐂𝐊 𝐍𝐎𝐓𝐈𝐅𝐈𝐂𝐀𝐓𝐈𝐎𝐍𝐒 𝐇𝐄𝐑𝐄')
@@ -165,6 +165,7 @@ client.once('ready', async () => {
     console.error("❌ Failed to send notification embed:", err);
   }
 });
+
 // === MEMBER EVENTS ===
 
 // 🔹 When new member joins
