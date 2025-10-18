@@ -156,21 +156,19 @@ module.exports = {
     const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
     const timeString = now.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" });
 
-    // ✅ Clean embed (Join Fast! inside)
     let description = `**Seeds**\n${seedsText.slice(0, 1024) || "❌ Empty"}\n\n**Gear**\n${gearText.slice(0, 1024) || "❌ Empty"}\n\n🏃‍♂️ **Join Fast! Here’s the list of private server!** <#${privateServerChannelId}>`;
 
     const embed = new EmbedBuilder()
       .setTitle(`Plants vs Brainrots Stock - ${timeString}`)
-      .setDescription(description)
+      .setDescription(description.slice(0, 4096))
       .setColor(0xff0080);
 
-    await channel.send({ content: ping || null, embeds: [embed] });
+    await channel.send({ content: ping || "", embeds: [embed] });
     lastUpdatedAt = updatedAt;
   },
 
-  async checkForUpdate(client) {
+  async checkForUpdate(client, guild) {
     try {
-      const guild = client.guilds.cache.first();
       const channelId = (await getData("pvbstock/discord"))?.[guild.id]?.channelId;
       if (!channelId) return false;
 
@@ -242,11 +240,42 @@ module.exports = {
       if (updatedAt) lastUpdatedAt = updatedAt;
       console.log("✅ LastUpdatedAt set to:", lastUpdatedAt);
 
-      setInterval(async () => {
-        for (const guild of client.guilds.cache.values()) {
-          await this.checkForUpdate(client);
-        }
-      }, 1000);
+      // 🕒 Function: get time (ms) until next aligned 5-minute mark
+      function getMsUntilNext5Min() {
+        const now = new Date();
+        const minutes = now.getMinutes();
+        const next = new Date(now);
+        next.setMinutes(Math.ceil((minutes + 1) / 5) * 5, 0, 0);
+        return next - now;
+      }
+
+      // 🔁 1-second checking loop (stops when update detected)
+      const startSecondCheck = async () => {
+        console.log("🕐 Starting 1-second check for stock update...");
+        const interval = setInterval(async () => {
+          const { updatedAt: current } = await module.exports.fetchPVBRStock();
+          if (current && current !== lastUpdatedAt) {
+            console.log("📦 Stock update detected!");
+            for (const guild of client.guilds.cache.values()) {
+              await module.exports.checkForUpdate(client, guild);
+            }
+            clearInterval(interval);
+            console.log("✅ Update sent, waiting for next 5-minute mark...");
+          }
+        }, 1000);
+      };
+
+      // 🔄 Main 5-minute scheduler
+      const loop = async () => {
+        const waitTime = getMsUntilNext5Min();
+        console.log(`⏳ Waiting ${Math.round(waitTime / 1000)}s until next 5-minute mark...`);
+        setTimeout(async () => {
+          await startSecondCheck();
+          loop(); // repeat for next cycle
+        }, waitTime);
+      };
+
+      loop();
     } catch (err) {
       console.error("❌ Error initializing PVBR loop:", err);
     }
