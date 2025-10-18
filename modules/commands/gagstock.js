@@ -4,13 +4,13 @@ const path = require("path");
 
 module.exports.config = {
   name: "gagstock",
-  version: "2.9.0",
+  version: "3.0.0",
   credits: "Jaz La Peña + ChatGPT",
-  description: "Send full Grow a Garden stock every 5m20s in JSON code block",
+  description: "Send full Grow a Garden stock every 5m20s in JSON, split messages if too long",
 };
 
 const INTERVAL = 320000; // 5m 20s
-const CHANNEL_ID = "1426901600030429317"; // replace with your Discord channel ID
+const CHANNEL_ID = "1426901600030429317"; // Replace with your Discord channel ID
 
 // ✅ Connect to Grow a Garden WebSocket and get stock
 function getStockData() {
@@ -46,7 +46,7 @@ function getStockData() {
   });
 }
 
-// ✅ Send all stock to Discord in JSON code block with safe splitting
+// ✅ Send all stock to Discord in JSON code block, split if too long
 async function sendStockUpdate(client, stock) {
   let channel = client.channels.cache.get(CHANNEL_ID);
   if (!channel) {
@@ -61,25 +61,25 @@ async function sendStockUpdate(client, stock) {
   const time = new Date().toLocaleTimeString();
   const header = `🪴 **Grow a Garden Stock Update (${time})**\n`;
 
-  // Convert stock object to JSON string
   const stockJson = JSON.stringify(stock, null, 2);
   const lines = stockJson.split("\n");
 
-  // Split into multiple messages safely under 4000 chars, with ```json block
   let chunk = header + "```json\n";
   for (const line of lines) {
-    if ((chunk.length + line.length + 1 + 3) > 4000) { // +3 for closing ```
+    // +5 for closing ```
+    if ((chunk.length + line.length + 5) > 2000) {
       chunk += "```";
       await channel.send(chunk);
-      chunk = "```json\n" + line;
+      chunk = "```json\n" + line + "\n"; // start new message
     } else {
       chunk += line + "\n";
     }
   }
-  if (chunk.length > 0) chunk += "```";
-  if (chunk.length > 3) await channel.send(chunk); // avoid sending only ``` without content
 
-  console.log("📤 [GAG] Full stock sent successfully in JSON format!");
+  if (chunk.length > 10) chunk += "```"; // close last message
+  if (chunk.length > 0) await channel.send(chunk);
+
+  console.log("📤 [GAG] Stock sent successfully in separate messages if too long!");
 }
 
 // === Main Loop ===
@@ -105,6 +105,7 @@ module.exports.onReady = async (client) => {
 };
 
 module.exports.checkForUpdate = async () => false;
+
 module.exports.letStart = async ({ message }) => {
   await message.reply("🌱 Grow a Garden stock watcher is running automatically.");
 };
