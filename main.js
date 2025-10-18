@@ -19,7 +19,7 @@ const warnModule = require('./modules/commands/warning.js');
 
 // === AI MODULES ===
 const gptModule = require('./modules/commands/gpt.js');
-const ariaModule = require('./modules/commands/aria.js'); // New Aria-Ai module
+const ariaModule = require('./modules/commands/airia.js'); // New Aria-Ai module
 
 // === CLIENT SETUP ===
 const client = new Client({
