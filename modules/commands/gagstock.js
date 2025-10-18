@@ -4,9 +4,9 @@ const path = require("path");
 
 module.exports.config = {
   name: "gagstock",
-  version: "2.3.0",
+  version: "2.4.0",
   credits: "Jaz La Peña + ChatGPT",
-  description: "Auto-check Grow a Garden stock with compact Discord updates",
+  description: "Auto-check Grow a Garden stock with split Discord updates",
 };
 
 const STOCK_FILE = path.join(__dirname, "gag_latest_stock.json");
@@ -74,7 +74,7 @@ function getChanges(oldStock, newStock) {
   return Object.keys(changes).length > 0 ? changes : null;
 }
 
-// ✅ Send compact stock updates
+// ✅ Send stock updates with automatic splitting
 async function sendStockUpdate(client, changes) {
   let channel = client.channels.cache.get(CHANNEL_ID);
   if (!channel) {
@@ -88,22 +88,31 @@ async function sendStockUpdate(client, changes) {
 
   const time = new Date().toLocaleTimeString();
   let msg = `🪴 **Grow a Garden Stock Update (${time})**\n`;
+  const lines = [];
 
   for (const [item, value] of Object.entries(changes)) {
     if (value === null) {
-      msg += `❌ Removed: **${item}**\n`;
+      lines.push(`❌ Removed: **${item}**`);
     } else if (typeof value === "object") {
-      // Compact JSON for object values
-      msg += `✅ Updated: **${item}** → ${JSON.stringify(value).replace(/[{}"]/g, "")}\n`;
+      lines.push(`✅ Updated: **${item}** → ${JSON.stringify(value).replace(/[{}"]/g, "")}`);
     } else {
-      msg += `✅ Updated: **${item}** → ${value}\n`;
+      lines.push(`✅ Updated: **${item}** → ${value}`);
     }
   }
 
-  console.log("📤 [GAG] Sending stock update...");
-  await channel.send(msg).catch((err) =>
-    console.error("❌ [GAG] Failed to send message:", err.message)
-  );
+  // Split into chunks under 4000 characters
+  let chunk = msg;
+  for (const line of lines) {
+    if ((chunk + "\n" + line).length > 3900) { // buffer to avoid hitting 4000
+      await channel.send(chunk);
+      chunk = line;
+    } else {
+      chunk += "\n" + line;
+    }
+  }
+  if (chunk.length > 0) await channel.send(chunk);
+
+  console.log("📤 [GAG] Stock update sent successfully!");
 }
 
 // === Main Loop ===
