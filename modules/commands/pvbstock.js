@@ -118,14 +118,12 @@ module.exports = {
     const { items, updatedAt } = await this.fetchPVBRStock();
     if (!items?.length) return channel.send("⚠️ Failed to fetch PVBR stock.");
 
-    // Filter by category from API
     const seeds = items.filter(i => i.category === "seed");
     const gear = items.filter(i => i.category === "gear");
 
     const seedsText = this.formatItems(seeds);
     const gearText = this.formatItems(gear);
 
-    // ✅ Only ping specific roles (from provided list)
     const ITEM_ROLES = {
       "King Limone": "1429082109934309470",
       "Mango": "1429082598121930783",
@@ -158,12 +156,8 @@ module.exports = {
     const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }));
     const timeString = now.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" });
 
-    let description = `**Seeds**\n${seedsText.slice(0, 1024) || "❌ Empty"}\n\n**Gear**\n${gearText.slice(0, 1024) || "❌ Empty"}`;
-
-    const hasStockPing = uniquePings.length > 0;
-    if (hasStockPing) {
-      description += `\n\n🎉 Some items are in stock! Check them out below 👇`;
-    }
+    // ✅ Clean embed (Join Fast! inside)
+    let description = `**Seeds**\n${seedsText.slice(0, 1024) || "❌ Empty"}\n\n**Gear**\n${gearText.slice(0, 1024) || "❌ Empty"}\n\n🏃‍♂️ **Join Fast! Here’s the list of private server!** <#${privateServerChannelId}>`;
 
     const embed = new EmbedBuilder()
       .setTitle(`Plants vs Brainrots Stock - ${timeString}`)
