@@ -17,6 +17,10 @@ const loadEvents = require('./utils/eventLoader');
 const { getData, setData } = require('./database.js');
 const warnModule = require('./modules/commands/warning.js');
 
+// === AI MODULES ===
+const gptModule = require('./modules/commands/gpt.js');
+const ariaModule = require('./modules/commands/aria.js'); // New Aria-Ai module
+
 // === CLIENT SETUP ===
 const client = new Client({
   intents: [
@@ -25,7 +29,7 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessageReactions,
-    GatewayIntentBits.GuildModeration // required for audit logs
+    GatewayIntentBits.GuildModeration
   ],
   partials: [Partials.Message, Partials.Channel, Partials.Reaction]
 });
@@ -37,6 +41,7 @@ client.events = new Map();
 // === CHANNELS & ROLES ===
 const GAG_CHANNEL_ID = "1426904612861902868";
 const PVB_CHANNEL_ID = "1426904690343284847";
+const ARIA_CHANNEL_ID = "1428927739431227503"; // Aria-Ai channel
 const ROLE_CHANNELS = [GAG_CHANNEL_ID, PVB_CHANNEL_ID];
 
 const roleMap = {
@@ -214,20 +219,20 @@ client.on(Events.GuildMemberRemove, async (member) => {
   await channel.send({ embeds: [embed] });
 });
 
-// === MESSAGE HANDLER: WFL + WARN + PREFIX COMMANDS + GPT MODULE ===
+// === MESSAGE HANDLER ===
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot || !message.guild) return;
 
-  // === WFL REACTION ===
+  // WFL REACTION
   const wflRegex = /\b(?:win\s*or\s*lose|win\s*lose|w[\s\/\.\-]*f[\s\/\.\-]*l)\b/i;
   if (wflRegex.test(message.content)) {
     try { await message.react('🇼'); await message.react('🇫'); await message.react('🇱'); } catch {}
   }
 
-  // === WARNING MODULE ===
+  // WARNING MODULE
   try { await warnModule.handleEvent({ message }); } catch (err) { console.error(err); }
 
-  // === PREFIX COMMANDS ===
+  // PREFIX COMMANDS
   const prefix = config.prefix;
   if (message.content.startsWith(prefix)) {
     const args = message.content.slice(prefix.length).trim().split(/\s+/);
@@ -239,10 +244,14 @@ client.on(Events.MessageCreate, async (message) => {
     }
   }
 
-  // === GPT MODULE AUTO-REPLY ===
-  const gptCommand = client.commands.get("gpt");
-  if (gptCommand && message.channel.id === gptCommand.config.channelId) {
-    try { await gptCommand.letStart({ message }); } catch (err) { console.error("GPT module error:", err); }
+  // GPT MODULE AUTO-REPLY
+  if (gptModule && message.channel.id === gptModule.config.channelId) {
+    try { await gptModule.letStart({ message }); } catch (err) { console.error("GPT module error:", err); }
+  }
+
+  // ARIA-AI MODULE AUTO-REPLY
+  if (ariaModule && message.channel.id === ARIA_CHANNEL_ID) {
+    try { await ariaModule.letStart({ message }); } catch (err) { console.error("Aria-Ai module error:", err); }
   }
 });
 
