@@ -82,7 +82,6 @@ async function applyHighestRoleEmoji(member) {
 
     if (member.displayName !== newNickname) {
       await member.setNickname(newNickname).catch(() => {});
-      // ✅ Removed log completely
     }
   } catch (err) {
     console.error(`❌ Failed to apply emoji nickname for ${member.user.tag}:`, err);
@@ -103,34 +102,39 @@ client.once('ready', async () => {
   if (pvbstock?.onReady) await pvbstock.onReady(client);
   if (gagstock?.onReady) await gagstock.onReady(client);
 
-  // Start aligned check loop for auto-stock
+  // === ALIGNED CHECK LOOP (Anti-Spam) ===
   (async function alignedCheckLoop() {
+    console.log("🔁 Starting aligned check loop...");
     while (true) {
       await waitUntilNextAligned();
       console.log(`🕒 Aligned check started (${new Date().toLocaleTimeString()})`);
 
-      const start = Date.now();
       let updated = false;
-      const checkInterval = setInterval(async () => {
-        const diff = (Date.now() - start) / 1000;
+
+      // Check every second for up to 240s (4 minutes)
+      for (let i = 0; i < 240; i++) {
         if (pvbstock?.checkForUpdate && gagstock?.checkForUpdate) {
           const pvbChanged = await pvbstock.checkForUpdate(client);
           const gagChanged = await gagstock.checkForUpdate(client);
           if (pvbChanged || gagChanged) {
-            updated = true;
-            clearInterval(checkInterval);
             console.log("✅ Stock updated — notifications sent!");
+            updated = true;
+            break;
           }
         }
-        if (diff > 240 && !updated) {
-          console.log("⌛ No stock update found — waiting for next aligned time.");
-          clearInterval(checkInterval);
-        }
-      }, 1000);
+        await new Promise(res => setTimeout(res, 1000));
+      }
+
+      if (!updated) {
+        console.log("⌛ No stock update found — waiting for next aligned time.");
+      }
+
+      // Safety delay before looping again
+      await new Promise(res => setTimeout(res, 1000));
     }
   })();
 
-  // Initial nickname emoji update on startup
+  // === INITIAL EMOJI NICKNAME SYNC ===
   console.log("🔄 Updating emoji nicknames for all members...");
   for (const guild of client.guilds.cache.values()) {
     const members = await guild.members.fetch();
@@ -155,7 +159,7 @@ client.on(Events.GuildMemberAdd, async (member) => {
     await channel.send({ embeds: [embed] });
   }
 
-  // Apply emoji nickname for new member silently
+  // Apply emoji nickname silently
   await applyHighestRoleEmoji(member);
 });
 
