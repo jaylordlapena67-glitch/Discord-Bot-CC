@@ -28,7 +28,7 @@ module.exports = {
     userCooldowns[userId] = now;
 
     try {
-      // Call BetaDash GPT API
+      // Call GPT API
       const response = await axios.get(
         `https://betadash-api-swordslush-production.up.railway.app/gpt4?ask=${encodeURIComponent(message.content)}`
       );
@@ -39,20 +39,18 @@ module.exports = {
       const sendEmbed = async (text) => {
         const embed = new EmbedBuilder()
           .setColor(Colors.Purple)
-          .setTitle("GPT Response") // ✅ Just “GPT Response”
+          .setAuthor({ name: "GPT Response" }) // 👈 small header text (like Aria-Ai)
           .setDescription(text)
-          .setFooter({
-            text: `Reply to ${message.author.tag}`,
-            iconURL: message.author.displayAvatarURL({ dynamic: true })
-          })
+          .setFooter({ text: `Reply to ${message.author.tag}` })
           .setTimestamp();
+
         await message.reply({ embeds: [embed] });
       };
 
       if (gptContent.length <= 4000) {
         await sendEmbed(gptContent);
       } else {
-        // Split into chunks of max 4000 characters
+        // Split long replies into chunks
         const chunks = gptContent.match(/[\s\S]{1,4000}/g);
         for (const chunk of chunks) {
           await sendEmbed(chunk);
