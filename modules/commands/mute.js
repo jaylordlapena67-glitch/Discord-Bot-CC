@@ -36,18 +36,20 @@ module.exports = {
     if (targetMember.permissions.has(PermissionFlagsBits.Administrator))
       return message.reply("⚠️ Cannot mute an Administrator.");
 
-    const durationArg = args.find((arg) => parseTime(arg));
+    const durationArg = args.find(arg => parseTime(arg));
     if (!durationArg) return message.reply("⚠️ Provide a valid duration (e.g., 10m, 1h, 1d).");
     const muteDuration = parseTime(durationArg);
 
     const reason = args.slice(args.indexOf(durationArg) + 1).join(" ") || "No reason provided";
 
     try {
-      await targetMember.timeout(muteDuration, reason);
+      // Apply mute
+      await targetMember.timeout(muteDuration, `Manual mute by ${message.author.tag}: ${reason}`);
 
+      // Mute embed
       const embed = new EmbedBuilder()
-        .setColor(Colors.Blue)
-        .setTitle("MUTE ACTION")
+        .setColor(Colors.Orange)
+        .setTitle("🔇 MEMBER MUTED")
         .addFields(
           { name: "👤 User", value: user.tag, inline: true },
           { name: "⏰ Duration", value: durationArg, inline: true },
@@ -57,28 +59,14 @@ module.exports = {
         .setTimestamp();
 
       await message.reply({ embeds: [embed] });
+
+      // Log channel
       const logChannel = message.guild.channels.cache.get(LOG_CHANNEL_ID);
       if (logChannel) await logChannel.send({ embeds: [embed] });
 
-      // Auto-unmute after duration
-      setTimeout(async () => {
-        const refreshed = await message.guild.members.fetch(user.id).catch(() => null);
-        if (refreshed && refreshed.isCommunicationDisabled()) {
-          await refreshed.timeout(null, "Auto-unmute after mute duration");
-          const unmuteEmbed = new EmbedBuilder()
-            .setColor(Colors.Green)
-            .setTitle("AUTO UNMUTE")
-            .setDescription(`🔊 ${user.tag} has been automatically unmuted.`)
-            .setFooter({ text: "Auto-unmuted", iconURL: message.guild.iconURL({ dynamic: true }) })
-            .setTimestamp();
-
-          await message.channel.send({ embeds: [unmuteEmbed] });
-          if (logChannel) await logChannel.send({ embeds: [unmuteEmbed] });
-        }
-      }, muteDuration);
     } catch (err) {
       console.error(err);
-      message.reply("⚠️ Failed to mute the member.");
+      message.reply("⚠️ Failed to mute the member. Make sure my role is higher than the target.");
     }
   },
 };
