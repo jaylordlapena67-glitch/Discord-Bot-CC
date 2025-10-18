@@ -1,18 +1,117 @@
+const { EmbedBuilder } = require("discord.js");
 const WebSocket = require("ws");
-const fs = require("fs");
-const path = require("path");
 
 module.exports.config = {
   name: "gagstock",
-  version: "3.1.0",
+  version: "5.0.0",
   credits: "Jaz La Peña + ChatGPT",
-  description: "Send full Grow a Garden stock every 5m20s in JSON, aligned to clock",
+  description: "Send Grow a Garden stock with full emojis every 5m20s, aligned to clock",
 };
 
 const INTERVAL_MS = 5 * 60 * 1000 + 20 * 1000; // 5m20s
 const CHANNEL_ID = "1426901600030429317"; // Replace with your Discord channel ID
 
-// ✅ Connect to Grow a Garden WebSocket and get stock
+// === Full Emoji Mapping ===
+const ITEM_EMOJI = {
+  // Seeds
+  Carrot: "🥕",
+  Strawberry: "🍓",
+  Blueberry: "🫐",
+  Tomato: "🍅",
+  Corn: "🌽",
+  Daffodil: "🌼",
+  Watermelon: "🌊",
+  Pumpkin: "🎃",
+  Apple: "🍎",
+  Bamboo: "🎋",
+  Coconut: "🥥",
+  Cactus: "🌵",
+  DragonFruit: "🐉",
+  Mango: "🥭",
+  Grape: "🍇",
+  Mushroom: "🍄",
+  Pepper: "🌶",
+  Beanstalk: "🌱",
+  EmberLily: "🌺",
+  SugarApple: "🍏",
+  BurningBud: "🔥",
+  GiantPinecone: "🌲",
+  ElderStrawberry: "🍓",
+  Romanesco: "🥦",
+  CrimsonThorn: "🌹",
+  GreatPumpkin: "🎃",
+  Potato: "🥔",
+  BrusselsSprouts: "🥬",
+  Cocomango: "🥭",
+  Broccoli: "🥦",
+  OrangeTulip: "🌷",
+
+  // Gear
+  WateringCan: "🌊",
+  TradingTicket: "🎫",
+  Trowel: "🪓",
+  RecallWrench: "🔧",
+  BasicSprinkler: "🌧",
+  AdvancedSprinkler: "💦",
+  GodlySprinkler: "⚡",
+  MagnifyingGlass: "🔍",
+  MasterSprinkler: "🏆",
+  CleaningSpray: "🧴",
+  CleansingPetShard: "🪄",
+  FavoriteTool: "⭐",
+  HarvestTool: "🌾",
+  FriendshipPot: "🤝",
+  MediumToy: "🧸",
+  MediumTreat: "🍪",
+  GrandmasterSprinkler: "🌟",
+  LevelupLollipop: "🍭",
+
+  // Eggs
+  "Common Egg": "🥚",
+  "Uncommon Egg": "🥚",
+  "Rare Egg": "🥚",
+  "Legendary Egg": "🥚",
+  "Mythical Egg": "🥚",
+  "Bug Egg": "🐛",
+  "Exotic Bug Egg": "🐞",
+  "Night Egg": "🌙",
+  "Premium Night Egg": "🌙",
+  "Bee Egg": "🐝",
+  "Anti Bee Egg": "🐝",
+  "Premium Anti Bee Egg": "🐝",
+  "Common Summer Egg": "🌞",
+  "Rare Summer Egg": "🌞",
+  "Paradise Egg": "🦩",
+  "Oasis Egg": "🏝",
+  "Dinosaur Egg": "🦖",
+  "Primal Egg": "🦕",
+  "Premium Primal Egg": "🦖",
+  "Rainbow Premium Primal Egg": "🌈🦕",
+  "Zen Egg": "🐕",
+  "Gourmet Egg": "🍳",
+  "Sprout Egg": "🌱",
+  "Enchanted Egg": "🧚",
+  "Fall Egg": "🍂",
+  "Premium Fall Egg": "🍂",
+  "Jungle Egg": "🌳",
+  "Spooky Egg": "👻",
+};
+
+// === Helper to get emoji ===
+function getEmoji(name) {
+  const key = name.replace(/ /g, "").replace(/Seed$/i, "");
+  return ITEM_EMOJI[key] || "❔";
+}
+
+// === Format items for embed ===
+function formatItems(items) {
+  if (!items?.length) return "❌ Empty";
+  return items
+    .map(i => `• ${getEmoji(i.name)} **${i.name.replace(/ Seed$/i, "")}** (${i.quantity ?? "?"})`)
+    .join("\n");
+}
+
+// === Fetch stock from WebSocket ===
 function getStockData() {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket("wss://ws.growagardenpro.com", [], {
@@ -29,14 +128,13 @@ function getStockData() {
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        let stockItems = {};
-        if (data.stock) stockItems = data.stock;
-        else if (data.items) stockItems = data.items;
-        else stockItems = data;
-        resolve(stockItems);
+        const seeds = data.data?.seeds ?? [];
+        const gear = data.data?.gear ?? [];
+        const eggs = data.data?.eggs ?? [];
+        resolve({ seeds, gear, eggs });
       } catch (err) {
-        console.error("❌ [GAG] Failed to parse stock data:", err.message);
-        resolve({});
+        console.error("❌ Failed to parse stock:", err.message);
+        resolve({ seeds: [], gear: [], eggs: [] });
       }
       ws.close();
     };
@@ -46,82 +144,48 @@ function getStockData() {
   });
 }
 
-// ✅ Send all stock to Discord in JSON code block, split if too long
+// === Send stock embed to Discord ===
 async function sendStockUpdate(client, stock) {
-  let channel = client.channels.cache.get(CHANNEL_ID);
-  if (!channel) {
-    try {
-      channel = await client.channels.fetch(CHANNEL_ID);
-    } catch (err) {
-      console.error("❌ [GAG] Failed to fetch channel:", err.message);
-      return;
-    }
-  }
+  const channel = await client.channels.fetch(CHANNEL_ID);
+  const now = new Date().toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" });
 
-  const time = new Date().toLocaleTimeString();
-  const header = `🪴 **Grow a Garden Stock Update (${time})**\n`;
+  const embed = new EmbedBuilder()
+    .setTitle(`🪴 Grow a Garden Stock - ${now}`)
+    .setColor(0x00ff00)
+    .setDescription(
+      `**Seeds**\n${formatItems(stock.seeds)}\n\n` +
+      `**Gear**\n${formatItems(stock.gear)}\n\n` +
+      `**Eggs**\n${formatItems(stock.eggs)}`
+    );
 
-  const stockJson = JSON.stringify(stock, null, 2);
-  const lines = stockJson.split("\n");
-
-  let chunk = header + "```json\n";
-  for (const line of lines) {
-    if ((chunk.length + line.length + 5) > 2000) { // +5 for closing ```
-      chunk += "```";
-      await channel.send(chunk);
-      chunk = "```json\n" + line + "\n"; // start new message
-    } else {
-      chunk += line + "\n";
-    }
-  }
-
-  if (chunk.length > 10) chunk += "```"; // close last message
-  if (chunk.length > 0) await channel.send(chunk);
-
-  console.log("📤 [GAG] Stock sent successfully in separate messages if too long!");
+  await channel.send({ embeds: [embed] });
+  console.log("📤 Stock sent!");
 }
 
-// ✅ Calculate delay until next aligned 5m20s interval
+// === Run stock update every 5m20s aligned ===
 function getInitialDelay() {
   const now = new Date();
   const totalSeconds = now.getMinutes() * 60 + now.getSeconds();
   const remainder = totalSeconds % (INTERVAL_MS / 1000);
-  const delaySeconds = (INTERVAL_MS / 1000) - remainder;
-  return delaySeconds * 1000;
+  return (INTERVAL_MS / 1000 - remainder) * 1000;
 }
 
-// ✅ Run a single stock update
 async function runStockUpdate(client) {
-  try {
-    const stock = await getStockData();
-    await sendStockUpdate(client, stock);
-  } catch (err) {
-    console.error("❌ [GAG] Error:", err.message);
-  }
+  const stock = await getStockData();
+  await sendStockUpdate(client, stock);
 }
 
-// ✅ Start aligned loop
 async function startAlignedLoop(client) {
   const delay = getInitialDelay();
-  console.log(`⏱ [GAG] First stock update in ${Math.ceil(delay / 1000)} seconds to align with 5m20s intervals`);
+  console.log(`⏱ First stock update in ${Math.ceil(delay / 1000)}s to align`);
 
   setTimeout(() => {
-    runStockUpdate(client); // first update
-
-    setInterval(() => {
-      runStockUpdate(client); // repeat every 5m20s
-    }, INTERVAL_MS);
+    runStockUpdate(client);
+    setInterval(() => runStockUpdate(client), INTERVAL_MS);
   }, delay);
 }
 
-// === Lifecycle Hooks ===
 module.exports.onReady = async (client) => {
-  console.log("✅ [GAG] Grow a Garden stock watcher initialized");
+  console.log("✅ GAG stock watcher initialized");
   startAlignedLoop(client);
-};
-
-module.exports.checkForUpdate = async () => false;
-
-module.exports.letStart = async ({ message }) => {
-  await message.reply("🌱 Grow a Garden stock watcher is running automatically.");
 };
