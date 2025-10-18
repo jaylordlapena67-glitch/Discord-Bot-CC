@@ -24,7 +24,8 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessageReactions
+    GatewayIntentBits.GuildMessageReactions,
+    GatewayIntentBits.GuildModeration // required for audit logs
   ],
   partials: [Partials.Message, Partials.Channel, Partials.Reaction]
 });
@@ -48,6 +49,8 @@ const roleMap = {
 
 const PANEL_MARKER = '🎭 **Choose a role below:**';
 const LOG_CHANNEL_ID = '1426904103534985317';
+const WELCOME_CHANNEL = '1427870606660997192';
+const GOODBYE_CHANNEL = '1427870731508781066';
 
 // === HELPER FUNCTIONS ===
 function buildButtonsForChannel(channelId) {
@@ -85,25 +88,6 @@ async function ensurePanelInChannel(channel) {
   if (!existing) await sendPanelToChannel(channel);
 }
 
-// === ALIGNED TIME CHECK ===
-function getNextAlignedTime() {
-  const now = new Date();
-  const minute = now.getMinutes();
-  const nextMinute = Math.ceil(minute / 5) * 5;
-  const next = new Date(now);
-  next.setMinutes(nextMinute === 60 ? 0 : nextMinute, 0, 0);
-  if (nextMinute === 60) next.setHours(now.getHours() + 1);
-  return next;
-}
-
-async function waitUntilNextAligned() {
-  const next = getNextAlignedTime();
-  const delay = next.getTime() - Date.now();
-  console.log(`⏳ Waiting until ${next.toLocaleTimeString()} to start stock check...`);
-  await new Promise(res => setTimeout(res, delay));
-}
-
-// === EMOJI DETECTION & NICKNAME LOGIC ===
 function extractEmojis(text) {
   if (!text) return [];
   const match = text.match(/^([\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F]+)/u);
@@ -163,40 +147,7 @@ client.once('ready', async () => {
 
   console.log('🔁 Role panel auto-check active (5m).');
 
-  // resume PVBR & GAG stock
-  const pvbstock = client.commands.get("pvbstock");
-  const gagstock = client.commands.get("gagstock");
-  if (pvbstock?.onReady) await pvbstock.onReady(client);
-  if (gagstock?.onReady) await gagstock.onReady(client);
-
-  // aligned loop for stock checking
-  (async function alignedCheckLoop() {
-    while (true) {
-      await waitUntilNextAligned();
-      console.log(`🕒 Aligned check started (${new Date().toLocaleTimeString()})`);
-
-      const start = Date.now();
-      let updated = false;
-      const checkInterval = setInterval(async () => {
-        const diff = (Date.now() - start) / 1000;
-        if (pvbstock?.checkForUpdate && gagstock?.checkForUpdate) {
-          const pvbChanged = await pvbstock.checkForUpdate(client);
-          const gagChanged = await gagstock.checkForUpdate(client);
-          if (pvbChanged || gagChanged) {
-            updated = true;
-            clearInterval(checkInterval);
-            console.log("✅ Stock updated — notifications sent!");
-          }
-        }
-        if (diff > 240 && !updated) {
-          console.log("⌛ No stock update found — waiting for next aligned time.");
-          clearInterval(checkInterval);
-        }
-      }, 1000);
-    }
-  })();
-
-  console.log("🔄 Checking and updating nicknames with emojis...");
+  // Update nicknames with emojis
   for (const guild of client.guilds.cache.values()) {
     const members = await guild.members.fetch();
     for (const member of members.values()) await applyHighestRoleEmoji(member);
@@ -237,14 +188,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
 });
 
 // === WELCOME / GOODBYE ===
-const WELCOME_CHANNEL = '1427870606660997192';
-const GOODBYE_CHANNEL = '1427870731508781066';
-
 client.on(Events.GuildMemberAdd, async (member) => {
   const channel = member.guild.channels.cache.get(WELCOME_CHANNEL);
   if (channel) {
     const embed = new EmbedBuilder()
-.setColor(Colors.Green)
+      .setColor(Colors.Green)
       .setTitle(`👋 Welcome ${member.user.tag}!`)
       .setDescription(`Glad to have you here, <@${member.id}>! 🎉`)
       .addFields({ name: 'Member Count', value: `${member.guild.memberCount}`, inline: true })
@@ -291,7 +239,7 @@ client.on(Events.MessageCreate, async (message) => {
     }
   }
 
-  // === GPT MODULE AUTO-REPLY (no prefix required) ===
+  // === GPT MODULE AUTO-REPLY ===
   const gptCommand = client.commands.get("gpt");
   if (gptCommand && message.channel.id === gptCommand.config.channelId) {
     try { await gptCommand.letStart({ message }); } catch (err) { console.error("GPT module error:", err); }
@@ -301,6 +249,42 @@ client.on(Events.MessageCreate, async (message) => {
 // === GUILD MEMBER UPDATE ===
 client.on(Events.GuildMemberUpdate, async (_, newMember) => {
   await applyHighestRoleEmoji(newMember);
+});
+
+// === ADMIN / MOD ACTION LOGGING ===
+client.on(Events.GuildAuditLogEntryCreate, async (entry) => {
+  const logChannel = entry.guild.channels.cache.get(LOG_CHANNEL_ID);
+  if (!logChannel) return;
+
+  let description = '';
+  switch (entry.action) {
+    case 'MEMBER_ROLE_UPDATE':
+      description = `<@${entry.executor.id}> **updated roles** for <@${entry.target.id}>.\nRoles added: ${entry.changes?.filter(c => c.key === '$add')?.map(c => c.new?.map(r => `<@&${r.id}>`).join(', ')).join(', ') || 'None'}\nRoles removed: ${entry.changes?.filter(c => c.key === '$remove')?.map(c => c.new?.map(r => `<@&${r.id}>`).join(', ')).join(', ') || 'None'}`;
+      break;
+    case 'MEMBER_BAN_ADD':
+      description = `<@${entry.executor.id}> **banned** <@${entry.target.id}>.`;
+      break;
+    case 'MEMBER_BAN_REMOVE':
+      description = `<@${entry.executor.id}> **unbanned** <@${entry.target.id}>.`;
+      break;
+    case 'MEMBER_UPDATE':
+      description = `<@${entry.executor.id}> **updated member** <@${entry.target.id}>.`;
+      break;
+    case 'MEMBER_KICK':
+      description = `<@${entry.executor.id}> **kicked** <@${entry.target.id}>.`;
+      break;
+    default:
+      return; // ignore other actions
+  }
+
+  if (description) {
+    const embed = new EmbedBuilder()
+      .setColor(Colors.Orange)
+      .setTitle('🛡️ Admin Action')
+      .setDescription(description)
+      .setTimestamp();
+    logChannel.send({ embeds: [embed] }).catch(() => {});
+  }
 });
 
 // === LOGIN ===
