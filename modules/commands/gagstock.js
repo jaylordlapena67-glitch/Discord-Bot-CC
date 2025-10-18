@@ -4,14 +4,13 @@ const path = require("path");
 
 module.exports.config = {
   name: "gagstock",
-  version: "2.6.0",
+  version: "2.9.0",
   credits: "Jaz La Peña + ChatGPT",
-  description: "Auto-check Grow a Garden stock with summary + split Discord updates",
+  description: "Send full Grow a Garden stock every 5m20s in JSON code block",
 };
 
-const STOCK_FILE = path.join(__dirname, "gag_latest_stock.json");
 const INTERVAL = 320000; // 5m 20s
-const CHANNEL_ID = "1426901600030429317"; // <-- replace with your channel ID
+const CHANNEL_ID = "1426901600030429317"; // replace with your Discord channel ID
 
 // ✅ Connect to Grow a Garden WebSocket and get stock
 function getStockData() {
@@ -30,10 +29,14 @@ function getStockData() {
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        resolve(data);
+        let stockItems = {};
+        if (data.stock) stockItems = data.stock;
+        else if (data.items) stockItems = data.items;
+        else stockItems = data;
+        resolve(stockItems);
       } catch (err) {
         console.error("❌ [GAG] Failed to parse stock data:", err.message);
-        resolve(event.data);
+        resolve({});
       }
       ws.close();
     };
@@ -43,39 +46,8 @@ function getStockData() {
   });
 }
 
-// ✅ Load old stock
-function loadOldStock() {
-  if (!fs.existsSync(STOCK_FILE)) return {};
-  try {
-    return JSON.parse(fs.readFileSync(STOCK_FILE, "utf8"));
-  } catch {
-    return {};
-  }
-}
-
-// ✅ Save stock
-function saveStock(data) {
-  fs.writeFileSync(STOCK_FILE, JSON.stringify(data, null, 2));
-}
-
-// ✅ Compare old vs new and return only changes
-function getChanges(oldStock, newStock) {
-  const changes = {};
-  for (const key in newStock) {
-    if (JSON.stringify(oldStock[key]) !== JSON.stringify(newStock[key])) {
-      changes[key] = newStock[key];
-    }
-  }
-  for (const key in oldStock) {
-    if (!(key in newStock)) {
-      changes[key] = null; // null = removed
-    }
-  }
-  return Object.keys(changes).length > 0 ? changes : null;
-}
-
-// ✅ Send stock updates with summary + robust splitting
-async function sendStockUpdate(client, changes) {
+// ✅ Send all stock to Discord in JSON code block with safe splitting
+async function sendStockUpdate(client, stock) {
   let channel = client.channels.cache.get(CHANNEL_ID);
   if (!channel) {
     try {
@@ -87,42 +59,27 @@ async function sendStockUpdate(client, changes) {
   }
 
   const time = new Date().toLocaleTimeString();
+  const header = `🪴 **Grow a Garden Stock Update (${time})**\n`;
 
-  // Count updated and removed items
-  let updatedCount = 0;
-  let removedCount = 0;
-  for (const value of Object.values(changes)) {
-    if (value === null) removedCount++;
-    else updatedCount++;
-  }
+  // Convert stock object to JSON string
+  const stockJson = JSON.stringify(stock, null, 2);
+  const lines = stockJson.split("\n");
 
-  const header = `🪴 **Grow a Garden Stock Update (${time})** — ${updatedCount} updated, ${removedCount} removed\n`;
-  const lines = [];
-
-  // Build lines for each change
-  for (const [item, value] of Object.entries(changes)) {
-    if (value === null) {
-      lines.push(`❌ Removed: **${item}**`);
-    } else if (typeof value === "object") {
-      lines.push(`✅ Updated: **${item}** → ${JSON.stringify(value).replace(/[{}"]/g, "")}`);
-    } else {
-      lines.push(`✅ Updated: **${item}** → ${value}`);
-    }
-  }
-
-  // Split lines into multiple messages under 4000 characters
-  let chunk = header;
+  // Split into multiple messages safely under 4000 chars, with ```json block
+  let chunk = header + "```json\n";
   for (const line of lines) {
-    if ((chunk.length + line.length + 1) > 3900) { // buffer for safety
+    if ((chunk.length + line.length + 1 + 3) > 4000) { // +3 for closing ```
+      chunk += "```";
       await channel.send(chunk);
-      chunk = line; // start new chunk
+      chunk = "```json\n" + line;
     } else {
-      chunk += "\n" + line;
+      chunk += line + "\n";
     }
   }
-  if (chunk.length > 0) await channel.send(chunk);
+  if (chunk.length > 0) chunk += "```";
+  if (chunk.length > 3) await channel.send(chunk); // avoid sending only ``` without content
 
-  console.log("📤 [GAG] Stock update sent successfully!");
+  console.log("📤 [GAG] Full stock sent successfully in JSON format!");
 }
 
 // === Main Loop ===
@@ -131,17 +88,8 @@ async function startLoop(client) {
 
   while (true) {
     try {
-      const newStock = await getStockData();
-      const oldStock = loadOldStock();
-      const changes = getChanges(oldStock, newStock);
-
-      if (changes) {
-        console.log("⚡ [GAG] Changes detected!");
-        saveStock(newStock);
-        await sendStockUpdate(client, changes);
-      } else {
-        console.log("⏳ [GAG] No changes in stock.");
-      }
+      const stock = await getStockData();
+      await sendStockUpdate(client, stock);
     } catch (err) {
       console.error("❌ [GAG] Error:", err.message);
     }
