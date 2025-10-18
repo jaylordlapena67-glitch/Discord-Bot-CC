@@ -4,14 +4,16 @@ const path = require("path");
 
 module.exports.config = {
   name: "gagstock",
-  version: "2.0.0",
+  version: "2.3.0",
   credits: "Jaz La Peña + ChatGPT",
-  description: "Auto-check Grow a Garden stock every 5m20s and send update",
+  description: "Auto-check Grow a Garden stock with compact Discord updates",
 };
 
 const STOCK_FILE = path.join(__dirname, "gag_latest_stock.json");
+const INTERVAL = 320000; // 5m 20s
+const CHANNEL_ID = "1426901600030429317"; // <-- replace with your channel ID
 
-// ✅ Connect to Grow a Garden WebSocket
+// ✅ Connect to Grow a Garden WebSocket and get stock
 function getStockData() {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket("wss://ws.growagardenpro.com", [], {
@@ -29,7 +31,8 @@ function getStockData() {
       try {
         const data = JSON.parse(event.data);
         resolve(data);
-      } catch {
+      } catch (err) {
+        console.error("❌ [GAG] Failed to parse stock data:", err.message);
         resolve(event.data);
       }
       ws.close();
@@ -40,55 +43,91 @@ function getStockData() {
   });
 }
 
-// ✅ Compare new vs old stock to detect changes
-function detectChanges(newData) {
-  if (!fs.existsSync(STOCK_FILE)) return true;
-  const oldData = JSON.parse(fs.readFileSync(STOCK_FILE, "utf8"));
-  return JSON.stringify(oldData) !== JSON.stringify(newData);
+// ✅ Load old stock
+function loadOldStock() {
+  if (!fs.existsSync(STOCK_FILE)) return {};
+  try {
+    return JSON.parse(fs.readFileSync(STOCK_FILE, "utf8"));
+  } catch {
+    return {};
+  }
 }
 
-// ✅ Save new stock
+// ✅ Save stock
 function saveStock(data) {
   fs.writeFileSync(STOCK_FILE, JSON.stringify(data, null, 2));
 }
 
-// ✅ Send stock info to channel
-async function sendStockUpdate(client, data) {
-  const channelId = "1426901600030429317"; // <-- palitan mo kung saan mo gustong ipost
-  const channel = client.channels.cache.get(channelId);
-  if (!channel) return;
+// ✅ Compare old vs new and return only changes
+function getChanges(oldStock, newStock) {
+  const changes = {};
+  for (const key in newStock) {
+    if (JSON.stringify(oldStock[key]) !== JSON.stringify(newStock[key])) {
+      changes[key] = newStock[key];
+    }
+  }
+  for (const key in oldStock) {
+    if (!(key in newStock)) {
+      changes[key] = null; // null = removed
+    }
+  }
+  return Object.keys(changes).length > 0 ? changes : null;
+}
+
+// ✅ Send compact stock updates
+async function sendStockUpdate(client, changes) {
+  let channel = client.channels.cache.get(CHANNEL_ID);
+  if (!channel) {
+    try {
+      channel = await client.channels.fetch(CHANNEL_ID);
+    } catch (err) {
+      console.error("❌ [GAG] Failed to fetch channel:", err.message);
+      return;
+    }
+  }
 
   const time = new Date().toLocaleTimeString();
-  const msg = `🪴 **Grow a Garden Stock Update (${time})**\n\`\`\`json\n${JSON.stringify(
-    data,
-    null,
-    2
-  )}\n\`\`\``;
+  let msg = `🪴 **Grow a Garden Stock Update (${time})**\n`;
 
-  await channel.send(msg).catch(() => {});
+  for (const [item, value] of Object.entries(changes)) {
+    if (value === null) {
+      msg += `❌ Removed: **${item}**\n`;
+    } else if (typeof value === "object") {
+      // Compact JSON for object values
+      msg += `✅ Updated: **${item}** → ${JSON.stringify(value).replace(/[{}"]/g, "")}\n`;
+    } else {
+      msg += `✅ Updated: **${item}** → ${value}\n`;
+    }
+  }
+
+  console.log("📤 [GAG] Sending stock update...");
+  await channel.send(msg).catch((err) =>
+    console.error("❌ [GAG] Failed to send message:", err.message)
+  );
 }
 
 // === Main Loop ===
 async function startLoop(client) {
-  console.log("🔁 [GAG] Starting stock watcher loop (5m 20s interval)...");
+  console.log(`🔁 [GAG] Starting stock watcher loop (${INTERVAL / 1000}s interval)...`);
 
   while (true) {
     try {
-      const stockData = await getStockData();
-      const changed = detectChanges(stockData);
+      const newStock = await getStockData();
+      const oldStock = loadOldStock();
+      const changes = getChanges(oldStock, newStock);
 
-      if (changed) {
-        console.log("⚡ [GAG] New stock detected!");
-        saveStock(stockData);
-        await sendStockUpdate(client, stockData);
+      if (changes) {
+        console.log("⚡ [GAG] Changes detected!");
+        saveStock(newStock);
+        await sendStockUpdate(client, changes);
       } else {
-        console.log("⏳ [GAG] No change in stock.");
+        console.log("⏳ [GAG] No changes in stock.");
       }
     } catch (err) {
       console.error("❌ [GAG] Error:", err.message);
     }
 
-    await new Promise((r) => setTimeout(r, 320000)); // 5m 20s
+    await new Promise((r) => setTimeout(r, INTERVAL));
   }
 }
 
@@ -98,8 +137,7 @@ module.exports.onReady = async (client) => {
   startLoop(client);
 };
 
-module.exports.checkForUpdate = async () => false; // (main.js compatibility)
-
+module.exports.checkForUpdate = async () => false;
 module.exports.letStart = async ({ message }) => {
   await message.reply("🌱 Grow a Garden stock watcher is running automatically.");
 };
