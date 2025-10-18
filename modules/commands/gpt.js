@@ -13,8 +13,7 @@ module.exports = {
     cooldown: 5,
     permission: 0,
     aliases: ["chatgpt"],
-    channelId: "1428887115009360004", // GPT-only channel
-    apiKey: "6fdb6c73a819bc6a6f1e8f84931836284905b79712c367c837f0d30429598244"
+    channelId: "1428887115009360004" // GPT-only channel
   },
 
   async letStart({ message }) {
@@ -29,32 +28,30 @@ module.exports = {
     userCooldowns[userId] = now;
 
     try {
-      // Call new GPT API
+      // Call BetaDash GPT API
       const response = await axios.get(
-        `https://haji-mix-api.gleeze.com/api/gpt4o?ask=${encodeURIComponent(message.content)}&uid=${userId}&roleplay=&api_key=${this.config.apiKey}`
+        `https://betadash-api-swordslush-production.up.railway.app/gpt4?ask=${encodeURIComponent(message.content)}`
       );
 
-      const gptContent = response.data?.answer || "⚠️ No response from the API.";
+      const gptContent = response.data?.content?.trim() || "⚠️ No response from the API.";
 
-      // Discord embed character limit is 4096 for description
-      if (gptContent.length <= 4000) {
+      // Function to send embed safely
+      const sendEmbed = async (text) => {
         const embed = new EmbedBuilder()
           .setColor(Colors.Blurple)
-          .setDescription(gptContent)
+          .setDescription(text)
           .setFooter({ text: `Reply to ${message.author.tag}`, iconURL: message.author.displayAvatarURL({ dynamic: true }) })
           .setTimestamp();
-
         await message.reply({ embeds: [embed] });
+      };
+
+      if (gptContent.length <= 4000) {
+        await sendEmbed(gptContent);
       } else {
-        // Split long text into chunks of 4000 characters
+        // Split into chunks of max 4000 characters
         const chunks = gptContent.match(/[\s\S]{1,4000}/g);
         for (const chunk of chunks) {
-          const embed = new EmbedBuilder()
-            .setColor(Colors.Blurple)
-            .setDescription(chunk)
-            .setFooter({ text: `Reply to ${message.author.tag}`, iconURL: message.author.displayAvatarURL({ dynamic: true }) })
-            .setTimestamp();
-          await message.reply({ embeds: [embed] });
+          await sendEmbed(chunk);
         }
       }
 
