@@ -86,13 +86,14 @@ module.exports = {
     const { items, updatedAt } = await this.fetchPVBRStock();
     if (!items?.length) return channel.send("⚠️ Failed to fetch PVBR stock.");
 
-    // Use category instead of string matching
+    // Filter items by category
     const seeds = items.filter(i => i.category === "seed");
     const gear = items.filter(i => i.category === "gear");
 
     const seedsText = this.formatItems(seeds);
     const gearText = this.formatItems(gear);
 
+    // Ping for special stock
     const RARITY_ROLES = { godly: "1426897330644189217", secret: "1426897330644189217" };
     const pingRoles = [];
     if (seeds.some(i => ["godly","secret"].includes(this.getRarity(i.name)) && (i.currentStock ?? 0) > 0))
@@ -125,17 +126,18 @@ module.exports = {
 
   async checkForUpdate(client) {
     try {
-      const guild = client.guilds.cache.first();
-      const channelId = (await getData("pvbstock/discord"))?.[guild.id]?.channelId;
-      if (!channelId) return false;
+      const allData = (await getData("pvbstock/discord")) || {};
+      for (const [guildId, guildData] of Object.entries(allData)) {
+        if (!guildData.enabled || !guildData.channelId) continue;
 
-      const channel = await client.channels.fetch(channelId).catch(() => null);
-      if (!channel) return false;
+        const channel = await client.channels.fetch(guildData.channelId).catch(() => null);
+        if (!channel) continue;
 
-      const { updatedAt } = await this.fetchPVBRStock();
-      if (!updatedAt || updatedAt === lastUpdatedAt) return false;
+        const { updatedAt } = await this.fetchPVBRStock();
+        if (!updatedAt || updatedAt === lastUpdatedAt) continue;
 
-      await this.sendStock(channel);
+        await this.sendStock(channel);
+      }
       return true;
     } catch (err) {
       console.error("❌ PVBR checkForUpdate error:", err);
@@ -143,5 +145,66 @@ module.exports = {
     }
   },
 
-  // ...letStart() and onReady() remain the same
+  async letStart({ args, message }) {
+    const member = message.member;
+    if (!member.permissions.has(PermissionsBitField.Flags.Administrator))
+      return message.reply("🚫 Only Admins can use this command.");
+
+    const action = args[0]?.toLowerCase();
+    if (!["on", "off", "check"].includes(action))
+      return message.reply("⚠️ Invalid action! Use `on`, `off`, or `check`.");
+
+    const channel = message.channel;
+    const guildId = message.guild.id;
+    const allData = (await getData("pvbstock/discord")) || {};
+    const gcData = allData[guildId] || { enabled: false, channelId: null };
+
+    if (action === "on") {
+      if (gcData.enabled)
+        return message.reply("✅ PVBR Auto-stock is already **enabled**.");
+      gcData.enabled = true;
+      gcData.channelId = channel.id;
+      allData[guildId] = gcData;
+      await setData("pvbstock/discord", allData);
+      return message.reply("✅ PVBR Auto-stock **enabled**! Updates will be sent automatically.");
+    }
+
+    if (action === "off") {
+      if (!gcData.enabled)
+        return message.reply("⚠️ PVBR Auto-stock is already **disabled**.");
+      gcData.enabled = false;
+      allData[guildId] = gcData;
+      await setData("pvbstock/discord", allData);
+      return message.reply("🛑 PVBR Auto-stock **disabled**.");
+    }
+
+    if (action === "check") {
+      const status = gcData.enabled ? "✅ Enabled" : "❌ Disabled";
+      const location = gcData.channelId ? `<#${gcData.channelId}>` : "`None`";
+      const embed = new EmbedBuilder()
+        .setTitle("📊 PVBR Auto-stock Status")
+        .addFields(
+          { name: "Status", value: status, inline: true },
+          { name: "Channel", value: location, inline: true }
+        )
+        .setColor(0xff0080);
+      return message.reply({ embeds: [embed] });
+    }
+  },
+
+  async onReady(client) {
+    console.log("🔁 PVBR module ready — fetching latest stock timestamp...");
+    try {
+      const { updatedAt } = await this.fetchPVBRStock();
+      if (updatedAt) lastUpdatedAt = updatedAt;
+      console.log("✅ LastUpdatedAt set to:", lastUpdatedAt);
+
+      // Check for updates every 10 seconds
+      setInterval(async () => {
+        await this.checkForUpdate(client);
+      }, 10000);
+    } catch (err) {
+      console.error("❌ Error initializing PVBR loop:", err);
+    }
+  },
 };
