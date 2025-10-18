@@ -42,7 +42,7 @@ client.events = new Map();
 // === CHANNELS & ROLES ===
 const GAG_CHANNEL_ID = "1426904612861902868";
 const PVB_CHANNEL_ID = "1426904690343284847";
-const ARIA_CHANNEL_ID = "1428927739431227503"; // Aria-Ai channel
+const ARIA_CHANNEL_ID = "1428927739431227503";
 const ROLE_CHANNELS = [GAG_CHANNEL_ID, PVB_CHANNEL_ID];
 
 const roleMap = {
@@ -172,18 +172,15 @@ client.once('ready', async () => {
 
   console.log('🔁 Role panel auto-check active (5m).');
 
-  // === PVBR & GAG auto-stock resume ===
   const pvbstock = client.commands.get("pvbstock");
   const gagstock = client.commands.get("gagstock");
   if (pvbstock?.onReady) await pvbstock.onReady(client);
   if (gagstock?.onReady) await gagstock.onReady(client);
 
-  // Start aligned check loop for auto-stock
   (async function alignedCheckLoop() {
     while (true) {
       await waitUntilNextAligned();
       console.log(`🕒 Aligned check started (${new Date().toLocaleTimeString()})`);
-
       const start = Date.now();
       let updated = false;
       const checkInterval = setInterval(async () => {
@@ -205,7 +202,6 @@ client.once('ready', async () => {
     }
   })();
 
-  // Update nicknames with emojis
   console.log("🔄 Checking and updating nicknames with emojis...");
   for (const guild of client.guilds.cache.values()) {
     const members = await guild.members.fetch();
@@ -214,7 +210,7 @@ client.once('ready', async () => {
   console.log("✅ Nickname emojis updated for all members!");
 });
 
-// === AUTO RECREATE PANEL IF DELETED ===
+// === AUTO RECREATE PANEL ===
 client.on(Events.MessageDelete, async (message) => {
   if (!message?.content?.includes(PANEL_MARKER)) return;
   if (!ROLE_CHANNELS.includes(message.channelId)) return;
@@ -246,47 +242,73 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
-// === WELCOME / GOODBYE ===
+// === WELCOME / GOODBYE USING API ===
 client.on(Events.GuildMemberAdd, async (member) => {
   const channel = member.guild.channels.cache.get(WELCOME_CHANNEL);
-  if (channel) {
+  if (!channel) return;
+
+  try {
+    const avatar = encodeURIComponent(member.user.displayAvatarURL({ format: "png", size: 512 }));
+    const nickname = encodeURIComponent(member.displayName || member.user.username);
+    const secondText = encodeURIComponent(`Welcome to ${member.guild.name}, ${member.user.username}! 🎉`);
+
+    const apiUrl = `https://kaiz-apis.gleeze.com/api/welcomeV2?nickname=${nickname}&secondText=${secondText}&avatar=${avatar}&apikey=50ebc036-6604-46cd-ae13-0dcb52958bc8`;
+
+    const res = await fetch(apiUrl);
+    const buffer = await res.arrayBuffer();
+    const file = { attachment: Buffer.from(buffer), name: "welcome.png" };
+
     const embed = new EmbedBuilder()
       .setColor(Colors.Green)
-      .setTitle(`👋 Welcome ${member.user.tag}!`)
-      .setDescription(`Glad to have you here, <@${member.id}>! 🎉`)
-      .addFields({ name: 'Member Count', value: `${member.guild.memberCount}`, inline: true })
-      .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+      .addFields({ name: "👥 Current Members", value: `${member.guild.memberCount}`, inline: true })
+      .setImage("attachment://welcome.png")
       .setTimestamp();
-    await channel.send({ embeds: [embed] });
+
+    await channel.send({ embeds: [embed], files: [file] });
+    await applyHighestRoleEmoji(member);
+  } catch (err) {
+    console.error("❌ Welcome API Error:", err);
   }
-  await applyHighestRoleEmoji(member);
 });
 
 client.on(Events.GuildMemberRemove, async (member) => {
   const channel = member.guild.channels.cache.get(GOODBYE_CHANNEL);
   if (!channel) return;
-  const embed = new EmbedBuilder()
-    .setColor(Colors.Red)
-    .setTitle(`😢 ${member.user.tag} left the server`)
-    .addFields({ name: 'Member Count', value: `${member.guild.memberCount}`, inline: true })
-    .setTimestamp();
-  await channel.send({ embeds: [embed] });
+
+  try {
+    const avatar = encodeURIComponent(member.user.displayAvatarURL({ format: "png", size: 512 }));
+    const nickname = encodeURIComponent(member.displayName || member.user.username);
+    const secondText = encodeURIComponent(`${member.user.username} left ${member.guild.name}. 😢`);
+
+    const apiUrl = `https://kaiz-apis.gleeze.com/api/welcomeV2?nickname=${nickname}&secondText=${secondText}&avatar=${avatar}&apikey=50ebc036-6604-46cd-ae13-0dcb52958bc8`;
+
+    const res = await fetch(apiUrl);
+    const buffer = await res.arrayBuffer();
+    const file = { attachment: Buffer.from(buffer), name: "goodbye.png" };
+
+    const embed = new EmbedBuilder()
+      .setColor(Colors.Red)
+      .addFields({ name: "👥 Current Members", value: `${member.guild.memberCount}`, inline: true })
+      .setImage("attachment://goodbye.png")
+      .setTimestamp();
+
+    await channel.send({ embeds: [embed], files: [file] });
+  } catch (err) {
+    console.error("❌ Goodbye API Error:", err);
+  }
 });
 
 // === MESSAGE HANDLER ===
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot || !message.guild) return;
 
-  // === WFL REACTION ===
   const wflRegex = /\b(?:win\s*or\s*lose|win\s*lose|w[\s\/\.\-]*f[\s\/\.\-]*l)\b/i;
   if (wflRegex.test(message.content)) {
     try { await message.react('🇼'); await message.react('🇫'); await message.react('🇱'); } catch {}
   }
 
-  // === WARNING MODULE ===
   try { await warnModule.handleEvent({ message }); } catch (err) { console.error(err); }
 
-  // === PREFIX COMMANDS ===
   const prefix = config.prefix;
   if (message.content.startsWith(prefix)) {
     const args = message.content.slice(prefix.length).trim().split(/\s+/);
@@ -298,17 +320,14 @@ client.on(Events.MessageCreate, async (message) => {
     }
   }
 
-  // === GPT MODULE AUTO-REPLY ===
   if (gptModule && message.channel.id === gptModule.config.channelId) {
     try { await gptModule.letStart({ message }); } catch (err) { console.error("GPT module error:", err); }
   }
 
-// === META-AI MODULE AUTO-REPLY ===
-if (metaModule && message.channel.id === metaModule.config.channelId) {
-  try { await metaModule.letStart({ message }); } catch (err) { console.error("Meta-Ai module error:", err); }
-}
+  if (metaModule && message.channel.id === metaModule.config.channelId) {
+    try { await metaModule.letStart({ message }); } catch (err) { console.error("Meta-Ai module error:", err); }
+  }
 
-  // === ARIA-AI MODULE AUTO-REPLY ===
   if (ariaModule && message.channel.id === ARIA_CHANNEL_ID) {
     try { await ariaModule.letStart({ message }); } catch (err) { console.error("Aria-Ai module error:", err); }
   }
@@ -327,7 +346,7 @@ client.on(Events.GuildAuditLogEntryCreate, async (entry) => {
   let description = '';
   switch (entry.action) {
     case 'MEMBER_ROLE_UPDATE':
-      description = `<@${entry.executor.id}> **updated roles** for <@${entry.target.id}>.\nRoles added: ${entry.changes?.filter(c => c.key === '$add')?.map(c => c.new?.map(r => `<@&${r.id}>`).join(', ')).join(', ') || 'None'}\nRoles removed: ${entry.changes?.filter(c => c.key === '$remove')?.map(c => c.new?.map(r => `<@&${r.id}>`).join(', ')).join(', ') || 'None'}`;
+      description = `<@${entry.executor.id}> **updated roles** for <@${entry.target.id}>.`;
       break;
     case 'MEMBER_BAN_ADD':
       description = `<@${entry.executor.id}> **banned** <@${entry.target.id}>.`;
@@ -342,7 +361,7 @@ client.on(Events.GuildAuditLogEntryCreate, async (entry) => {
       description = `<@${entry.executor.id}> **kicked** <@${entry.target.id}>.`;
       break;
     default:
-      return; // ignore other actions
+      return;
   }
 
   if (description) {
