@@ -2,9 +2,8 @@
 const { EmbedBuilder, Colors, PermissionFlagsBits } = require("discord.js");
 
 const LOG_CHANNEL_ID = "1426904103534985317"; // Admin Log Channel ID
-const IGNORE_ROLE_ID = "1427447542475657278"; // Role to ignore during moderation
+const IGNORE_ROLE_ID = "1427447542475657278"; // Role to ignore
 
-// Time parser for mute duration
 function parseTime(str) {
     const regex = /^(\d+)([mhd])$/i;
     const match = str.match(regex);
@@ -27,7 +26,7 @@ module.exports = {
         usePrefix: true,
     },
 
-    letStart: async function ({ message, args }) {
+    run: async function ({ message, args }) { // ✅ FIXED name
         const member = await message.guild.members.fetch(message.author.id).catch(() => null);
         if (!member || !member.permissions.has(PermissionFlagsBits.Administrator)) {
             return message.reply("🚫 Only admins can use this command.");
@@ -43,7 +42,6 @@ module.exports = {
 
         const logChannel = message.guild.channels.cache.get(LOG_CHANNEL_ID);
 
-        // Handle mute duration
         let muteDuration = null;
         let durationArg = null;
         if (sub === "mute") {
@@ -52,12 +50,10 @@ module.exports = {
             muteDuration = parseTime(durationArg);
         }
 
-        // Find reason (if any)
         let firstArgIndexAfterMentions = Math.max(...mentions.map((u) => args.findIndex((a) => a.includes(u.id)))) + 1;
         if (sub === "mute" && durationArg) firstArgIndexAfterMentions = args.indexOf(durationArg) + 1;
         const reason = args.slice(firstArgIndexAfterMentions).join(" ").trim() || "No reason provided";
 
-        // Process each user
         for (const [userId, user] of mentions) {
             const targetMember = await message.guild.members.fetch(userId).catch(() => null);
             if (!targetMember) continue;
