@@ -33,14 +33,14 @@ module.exports = {
         `https://apis-keith.vercel.app/ai/metai?q=${encodeURIComponent(message.content)}`
       );
 
-      // ✅ Updated to use `response.data.response`
+      // ✅ Use response.data.response from new API
       const aiContent = response.data?.response?.trim() || "⚠️ No response from the API.";
 
       // Function to send embed message
       const sendEmbed = async (text) => {
         const embed = new EmbedBuilder()
           .setColor(Colors.Blue)
-          .setAuthor({ name: "Meta-Ai" }) // ✅ simple small header (matches your request)
+          .setAuthor({ name: "Llama 3-Turbo" }) // ✅ Updated author
           .setDescription(text)
           .setFooter({ text: `Reply to ${message.author.tag}` })
           .setTimestamp();
