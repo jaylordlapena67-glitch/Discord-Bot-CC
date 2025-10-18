@@ -13,7 +13,7 @@ module.exports = {
     cooldown: 5,
     permission: 0,
     aliases: ["meta", "facebookai"],
-    channelId: "1428957861676843048" // Meta-Ai channel
+    channelId: "1428957861676843048" // Meta-Ai only channel
   },
 
   async letStart({ message }) {
@@ -23,22 +23,24 @@ module.exports = {
     const userId = message.author.id;
     const now = Date.now();
 
-    // Cooldown check
+    // Cooldown check (5s per user)
     if (userCooldowns[userId] && now - userCooldowns[userId] < COOLDOWN_MS) return;
     userCooldowns[userId] = now;
 
     try {
-      // Call Meta-Ai API
+      // 🔗 Call new Meta-Ai API
       const response = await axios.get(
         `https://apis-keith.vercel.app/ai/metai?q=${encodeURIComponent(message.content)}`
       );
 
-      const aiContent = response.data?.result?.trim() || "⚠️ No response from the API.";
+      // ✅ Updated to use `response.data.response`
+      const aiContent = response.data?.response?.trim() || "⚠️ No response from the API.";
 
+      // Function to send embed message
       const sendEmbed = async (text) => {
         const embed = new EmbedBuilder()
           .setColor(Colors.Blue)
-          .setAuthor({ name: "Meta-Ai Response" }) // ✅ small header
+          .setAuthor({ name: "Meta-Ai" }) // ✅ simple small header (matches your request)
           .setDescription(text)
           .setFooter({ text: `Reply to ${message.author.tag}` })
           .setTimestamp();
@@ -46,6 +48,7 @@ module.exports = {
         await message.reply({ embeds: [embed] });
       };
 
+      // Split if longer than 4000 chars
       if (aiContent.length <= 4000) {
         await sendEmbed(aiContent);
       } else {
