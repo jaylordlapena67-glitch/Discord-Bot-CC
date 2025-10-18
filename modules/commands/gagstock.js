@@ -4,12 +4,12 @@ const path = require("path");
 
 module.exports.config = {
   name: "gagstock",
-  version: "3.0.0",
+  version: "3.1.0",
   credits: "Jaz La Peña + ChatGPT",
-  description: "Send full Grow a Garden stock every 5m20s in JSON, split messages if too long",
+  description: "Send full Grow a Garden stock every 5m20s in JSON, aligned to clock",
 };
 
-const INTERVAL = 320000; // 5m 20s
+const INTERVAL_MS = 5 * 60 * 1000 + 20 * 1000; // 5m20s
 const CHANNEL_ID = "1426901600030429317"; // Replace with your Discord channel ID
 
 // ✅ Connect to Grow a Garden WebSocket and get stock
@@ -66,8 +66,7 @@ async function sendStockUpdate(client, stock) {
 
   let chunk = header + "```json\n";
   for (const line of lines) {
-    // +5 for closing ```
-    if ((chunk.length + line.length + 5) > 2000) {
+    if ((chunk.length + line.length + 5) > 2000) { // +5 for closing ```
       chunk += "```";
       await channel.send(chunk);
       chunk = "```json\n" + line + "\n"; // start new message
@@ -82,26 +81,43 @@ async function sendStockUpdate(client, stock) {
   console.log("📤 [GAG] Stock sent successfully in separate messages if too long!");
 }
 
-// === Main Loop ===
-async function startLoop(client) {
-  console.log(`🔁 [GAG] Starting stock watcher loop (${INTERVAL / 1000}s interval)...`);
+// ✅ Calculate delay until next aligned 5m20s interval
+function getInitialDelay() {
+  const now = new Date();
+  const totalSeconds = now.getMinutes() * 60 + now.getSeconds();
+  const remainder = totalSeconds % (INTERVAL_MS / 1000);
+  const delaySeconds = (INTERVAL_MS / 1000) - remainder;
+  return delaySeconds * 1000;
+}
 
-  while (true) {
-    try {
-      const stock = await getStockData();
-      await sendStockUpdate(client, stock);
-    } catch (err) {
-      console.error("❌ [GAG] Error:", err.message);
-    }
-
-    await new Promise((r) => setTimeout(r, INTERVAL));
+// ✅ Run a single stock update
+async function runStockUpdate(client) {
+  try {
+    const stock = await getStockData();
+    await sendStockUpdate(client, stock);
+  } catch (err) {
+    console.error("❌ [GAG] Error:", err.message);
   }
+}
+
+// ✅ Start aligned loop
+async function startAlignedLoop(client) {
+  const delay = getInitialDelay();
+  console.log(`⏱ [GAG] First stock update in ${Math.ceil(delay / 1000)} seconds to align with 5m20s intervals`);
+
+  setTimeout(() => {
+    runStockUpdate(client); // first update
+
+    setInterval(() => {
+      runStockUpdate(client); // repeat every 5m20s
+    }, INTERVAL_MS);
+  }, delay);
 }
 
 // === Lifecycle Hooks ===
 module.exports.onReady = async (client) => {
   console.log("✅ [GAG] Grow a Garden stock watcher initialized");
-  startLoop(client);
+  startAlignedLoop(client);
 };
 
 module.exports.checkForUpdate = async () => false;
