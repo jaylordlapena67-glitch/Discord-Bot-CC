@@ -137,9 +137,8 @@ client.once('ready', async () => {
     for (const member of members.values()) await applyHighestRoleEmoji(member);
   }
   console.log("✅ Nickname emojis updated for all members!");
-});
 
-// === AUTO SEND NOTIFICATION EMBED ===
+  // === AUTO SEND NOTIFICATION EMBED ===
   try {
     const notifChannelId = '1429087581496279201';
     const notifChannel = client.channels.cache.get(notifChannelId);
@@ -165,7 +164,7 @@ client.once('ready', async () => {
   } catch (err) {
     console.error("❌ Failed to send notification embed:", err);
   }
-
+});
 // === MEMBER EVENTS ===
 
 // 🔹 When new member joins
