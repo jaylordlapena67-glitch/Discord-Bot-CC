@@ -3,123 +3,66 @@ const WebSocket = require("ws");
 
 module.exports.config = {
   name: "gagstock",
-  version: "5.0.0",
+  version: "5.1.0",
   credits: "Jaz La Peña + ChatGPT",
   description: "Send Grow a Garden stock with full emojis every 5m20s, aligned to clock",
 };
 
 const INTERVAL_MS = 5 * 60 * 1000 + 20 * 1000; // 5m20s
-const CHANNEL_ID = "1426901600030429317"; // Replace with your Discord channel ID
+const CHANNEL_ID = "1426901600030429317";
 
 // === Full Emoji Mapping ===
 const ITEM_EMOJI = {
   // Seeds
-  Carrot: "🥕",
-  Strawberry: "🍓",
-  Blueberry: "🫐",
-  Tomato: "🍅",
-  Corn: "🌽",
-  Daffodil: "🌼",
-  Watermelon: "🌊",
-  Pumpkin: "🎃",
-  Apple: "🍎",
-  Bamboo: "🎋",
-  Coconut: "🥥",
-  Cactus: "🌵",
-  DragonFruit: "🐉",
-  Mango: "🥭",
-  Grape: "🍇",
-  Mushroom: "🍄",
-  Pepper: "🌶",
-  Beanstalk: "🌱",
-  EmberLily: "🌺",
-  SugarApple: "🍏",
-  BurningBud: "🔥",
-  GiantPinecone: "🌲",
-  ElderStrawberry: "🍓",
-  Romanesco: "🥦",
-  CrimsonThorn: "🌹",
-  GreatPumpkin: "🎃",
-  Potato: "🥔",
-  BrusselsSprouts: "🥬",
-  Cocomango: "🥭",
-  Broccoli: "🥦",
-  OrangeTulip: "🌷",
+  Carrot: "🥕", Strawberry: "🍓", Blueberry: "🫐", Tomato: "🍅",
+  Corn: "🌽", Daffodil: "🌼", Watermelon: "🌊", Pumpkin: "🎃",
+  Apple: "🍎", Bamboo: "🎋", Coconut: "🥥", Cactus: "🌵",
+  DragonFruit: "🐉", Mango: "🥭", Grape: "🍇", Mushroom: "🍄",
+  Pepper: "🌶", Beanstalk: "🌱", EmberLily: "🌺", SugarApple: "🍏",
+  BurningBud: "🔥", GiantPinecone: "🌲", ElderStrawberry: "🍓",
+  Romanesco: "🥦", CrimsonThorn: "🌹", GreatPumpkin: "🎃", Potato: "🥔",
+  BrusselsSprouts: "🥬", Cocomango: "🥭", Broccoli: "🥦", OrangeTulip: "🌷",
 
   // Gear
-  WateringCan: "🌊",
-  TradingTicket: "🎫",
-  Trowel: "🪓",
-  RecallWrench: "🔧",
-  BasicSprinkler: "🌧",
-  AdvancedSprinkler: "💦",
-  GodlySprinkler: "⚡",
-  MagnifyingGlass: "🔍",
-  MasterSprinkler: "🏆",
-  CleaningSpray: "🧴",
-  CleansingPetShard: "🪄",
-  FavoriteTool: "⭐",
-  HarvestTool: "🌾",
-  FriendshipPot: "🤝",
-  MediumToy: "🧸",
-  MediumTreat: "🍪",
-  GrandmasterSprinkler: "🌟",
-  LevelupLollipop: "🍭",
+  WateringCan: "🌊", TradingTicket: "🎫", Trowel: "🪓", RecallWrench: "🔧",
+  BasicSprinkler: "🌧", AdvancedSprinkler: "💦", GodlySprinkler: "⚡",
+  MagnifyingGlass: "🔍", MasterSprinkler: "🏆", CleaningSpray: "🧴",
+  CleansingPetShard: "🪄", FavoriteTool: "⭐", HarvestTool: "🌾",
+  FriendshipPot: "🤝", MediumToy: "🧸", MediumTreat: "🍪",
+  GrandmasterSprinkler: "🌟", LevelupLollipop: "🍭",
 
   // Eggs
-  "Common Egg": "🥚",
-  "Uncommon Egg": "🥚",
-  "Rare Egg": "🥚",
-  "Legendary Egg": "🥚",
-  "Mythical Egg": "🥚",
-  "Bug Egg": "🐛",
-  "Exotic Bug Egg": "🐞",
-  "Night Egg": "🌙",
-  "Premium Night Egg": "🌙",
-  "Bee Egg": "🐝",
-  "Anti Bee Egg": "🐝",
-  "Premium Anti Bee Egg": "🐝",
-  "Common Summer Egg": "🌞",
-  "Rare Summer Egg": "🌞",
-  "Paradise Egg": "🦩",
-  "Oasis Egg": "🏝",
-  "Dinosaur Egg": "🦖",
-  "Primal Egg": "🦕",
-  "Premium Primal Egg": "🦖",
-  "Rainbow Premium Primal Egg": "🌈🦕",
-  "Zen Egg": "🐕",
-  "Gourmet Egg": "🍳",
-  "Sprout Egg": "🌱",
-  "Enchanted Egg": "🧚",
-  "Fall Egg": "🍂",
-  "Premium Fall Egg": "🍂",
-  "Jungle Egg": "🌳",
-  "Spooky Egg": "👻",
+  "Common Egg": "🥚", "Uncommon Egg": "🥚", "Rare Egg": "🥚",
+  "Legendary Egg": "🥚", "Mythical Egg": "🥚", "Bug Egg": "🐛",
+  "Exotic Bug Egg": "🐞", "Night Egg": "🌙", "Premium Night Egg": "🌙",
+  "Bee Egg": "🐝", "Anti Bee Egg": "🐝", "Premium Anti Bee Egg": "🐝",
+  "Common Summer Egg": "🌞", "Rare Summer Egg": "🌞", "Paradise Egg": "🦩",
+  "Oasis Egg": "🏝", "Dinosaur Egg": "🦖", "Primal Egg": "🦕",
+  "Premium Primal Egg": "🦖", "Rainbow Premium Primal Egg": "🌈🦕",
+  "Zen Egg": "🐕", "Gourmet Egg": "🍳", "Sprout Egg": "🌱",
+  "Enchanted Egg": "🧚", "Fall Egg": "🍂", "Premium Fall Egg": "🍂",
+  "Jungle Egg": "🌳", "Spooky Egg": "👻",
 };
 
 // === Helper to get emoji ===
 function getEmoji(name) {
-  const key = name.replace(/ /g, "").replace(/Seed$/i, "");
-  return ITEM_EMOJI[key] || "❔";
+  return ITEM_EMOJI[name.replace(/ Seed$/i, "")] || "❔";
 }
 
 // === Format items for embed ===
 function formatItems(items) {
   if (!items?.length) return "❌ Empty";
-  return items
-    .map(i => `• ${getEmoji(i.name)} **${i.name.replace(/ Seed$/i, "")}** (${i.quantity ?? "?"})`)
-    .join("\n");
+  return items.map(i => `• ${getEmoji(i.name)} **${i.name.replace(/ Seed$/i, "")}** (${i.quantity ?? "?"})`).join("\n");
 }
 
-// === Fetch stock from WebSocket ===
+// === Fetch stock from WebSocket (working parsing like v3.1.0) ===
 function getStockData() {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket("wss://ws.growagardenpro.com", [], {
       headers: {
         "accept-language": "en-US,en;q=0.9",
         origin: "https://growagardenpro.com",
-        "user-agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36",
+        "user-agent": "Mozilla/5.0",
       },
     });
 
@@ -128,9 +71,20 @@ function getStockData() {
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        const seeds = data.data?.seeds ?? [];
-        const gear = data.data?.gear ?? [];
-        const eggs = data.data?.eggs ?? [];
+        let seeds = [], gear = [], eggs = [];
+
+        // Parse according to new API
+        if (data.data) {
+          seeds = data.data.seeds || [];
+          gear = data.data.gear || [];
+          eggs = data.data.eggs || [];
+        } else {
+          // fallback like v3.1.0
+          if (data.seeds) seeds = data.seeds;
+          if (data.gear) gear = data.gear;
+          if (data.eggs) eggs = data.eggs;
+        }
+
         resolve({ seeds, gear, eggs });
       } catch (err) {
         console.error("❌ Failed to parse stock:", err.message);
