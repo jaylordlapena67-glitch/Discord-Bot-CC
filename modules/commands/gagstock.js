@@ -1,4 +1,4 @@
-const { PermissionsBitField, EmbedBuilder } = require("discord.js");
+mmconst { PermissionsBitField, EmbedBuilder } = require("discord.js");
 const WebSocket = require("ws");
 const { setData, getData } = require("../../database.js");
 
@@ -85,8 +85,7 @@ module.exports = {
       .map((cat) => {
         const arr = items.filter((i) =>
           cat === "Seeds" ? i.type === "seed" :
-          cat === "Gear" ? i.type === "gear" : 
-          cat === "Eggs" ? i.type === "egg" : []
+          cat === "Gear" ? i.type === "gear" : i.type === "egg" : []
         );
         return `**${cat}**\n${arr.map((i) => `• ${this.getEmoji(i.name)} **${i.name}** (${i.quantity})`).join("\n") || "❌ Empty"}`;
       })
