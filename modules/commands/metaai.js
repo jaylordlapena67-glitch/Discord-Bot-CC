@@ -27,6 +27,9 @@ module.exports = {
     userCooldowns[userId] = now;
 
     try {
+      // Start typing indicator
+      message.channel.sendTyping();
+
       // 🔗 Call Kaiz API
       const response = await axios.get(
         `https://kaiz-apis.gleeze.com/api/llama3-turbo?ask=${encodeURIComponent(message.content)}&uid=${userId}&apikey=50ebc036-6604-46cd-ae13-0dcb52958bc8`
