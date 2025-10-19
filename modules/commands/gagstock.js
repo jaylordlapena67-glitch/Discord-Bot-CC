@@ -46,10 +46,10 @@ module.exports = {
   },
 
   async fetchGAGStock() {
-    return new Promise(resolve => {
+    return new Promise((resolve) => {
       const ws = new WebSocket("wss://ws.growagardenpro.com");
       ws.on("open", () => ws.send(JSON.stringify({ action: "getStock" })));
-      ws.on("message", data => {
+      ws.on("message", (data) => {
         try {
           resolve(JSON.parse(data));
         } catch {
@@ -57,8 +57,8 @@ module.exports = {
         }
         ws.close();
       });
-      ws.on("error", err => {
-        console.error("❌ GAG WS error:", err);
+      ws.on("error", (err) => {
+        console.error("❌ [GAG] WebSocket error:", err);
         resolve({});
       });
     });
@@ -69,12 +69,12 @@ module.exports = {
     if (!channel) return;
 
     const description = ["Seeds", "Gear", "Eggs"]
-      .map(cat => {
-        const arr = items.filter(i =>
+      .map((cat) => {
+        const arr = items.filter((i) =>
           cat === "Seeds" ? i.type === "seed" :
           cat === "Gear" ? i.type === "gear" : i.type === "egg"
         );
-        return `**${cat}**\n${arr.map(i => `• ${this.getEmoji(i.name)} **${i.name}** (${i.quantity})`).join("\n") || "❌ Empty"}`;
+        return `**${cat}**\n${arr.map((i) => `• ${this.getEmoji(i.name)} **${i.name}** (${i.quantity})`).join("\n") || "❌ Empty"}`;
       })
       .join("\n\n");
 
@@ -111,7 +111,7 @@ module.exports = {
     }
 
     if (action === "off") {
-      gcData.channels = gcData.channels.filter(id => id !== channelId);
+      gcData.channels = gcData.channels.filter((id) => id !== channelId);
       if (gcData.channels.length === 0) gcData.enabled = false;
       allData[guildId] = gcData;
       await setData("gagstock/discord", allData);
@@ -120,58 +120,42 @@ module.exports = {
 
     if (action === "check") {
       const status = gcData.enabled ? "✅ Enabled" : "❌ Disabled";
-      const channels = gcData.channels.map(id => `<#${id}>`).join(", ") || "None";
+      const channels = gcData.channels.map((id) => `<#${id}>`).join(", ") || "None";
       return message.reply(`📊 Status: ${status}\nChannels: ${channels}`);
     }
   },
 
-  async onReady(client) {
-    console.log("🪴 [GAG] Module ready — starting aligned 5-min loop...");
+  // 🔹 Called every aligned check by main.js
+  async checkForUpdate(client) {
+    try {
+      const stockData = await this.fetchGAGStock();
+      const currentUpdate = stockData?.data?.lastGlobalUpdate;
 
-    const loop = async () => {
-      const now = new Date();
-      const next = new Date(now);
-      const alignedMinute = Math.ceil((now.getMinutes() + 1) / 5) * 5;
-      if (alignedMinute === 60) next.setHours(now.getHours() + 1, 0, 0, 0);
-      else next.setMinutes(alignedMinute, 0, 0);
+      if (!currentUpdate || currentUpdate === lastGlobalUpdate) return;
+      lastGlobalUpdate = currentUpdate;
 
-      const delay = next - now;
-      console.log(`🕒 [GAG] Waiting until ${next.toLocaleTimeString()}...`);
+      console.log(`✅ [GAG] Stock updated at ${new Date().toLocaleTimeString()}`);
 
-      setTimeout(async () => {
-        const interval = setInterval(async () => {
-          const stockData = await module.exports.fetchGAGStock();
-          const currentUpdate = stockData?.data?.lastGlobalUpdate;
+      const allData = (await getData("gagstock/discord")) || {};
+      for (const guildId in allData) {
+        const gcData = allData[guildId];
+        if (!gcData?.enabled || !Array.isArray(gcData.channels)) continue;
 
-          if (currentUpdate && currentUpdate !== lastGlobalUpdate) {
-            lastGlobalUpdate = currentUpdate;
-            console.log(`✅ [GAG] Stock updated at ${new Date().toLocaleTimeString()}`);
+        const items = [
+          ...(stockData.data.seeds || []),
+          ...(stockData.data.gear || []),
+          ...(stockData.data.events || []),
+          ...(stockData.data.honey || []),
+        ].filter((i) => ["seed", "gear", "egg"].includes(i.type));
 
-            const allData = (await getData("gagstock/discord")) || {};
-            for (const guildId in allData) {
-              const gcData = allData[guildId];
-              if (!gcData?.enabled || !Array.isArray(gcData.channels)) continue;
+        if (items.length === 0) continue;
 
-              for (const chId of gcData.channels) {
-                const items = [
-                  ...(stockData.data.seeds || []),
-                  ...(stockData.data.gear || []),
-                  ...(stockData.data.events || []),
-                  ...(stockData.data.honey || []),
-                ].filter(i => ["seed", "gear", "egg"].includes(i.type));
-
-                if (items.length > 0)
-                  await module.exports.sendStock(client, chId, items);
-              }
-            }
-
-            clearInterval(interval);
-            loop();
-          }
-        }, 1000);
-      }, delay);
-    };
-
-    loop();
+        for (const chId of gcData.channels) {
+          await this.sendStock(client, chId, items);
+        }
+      }
+    } catch (err) {
+      console.error("❌ [GAG] checkForUpdate error:", err);
+    }
   },
 };
