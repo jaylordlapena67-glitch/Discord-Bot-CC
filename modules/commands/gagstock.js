@@ -71,7 +71,7 @@ module.exports = {
 
   async fetchGAGStock() {
     return new Promise(resolve => {
-      const ws = new WebSocket("wss://gag-stock.example.com"); // replace with actual endpoint
+      const ws = new WebSocket("wss://ws.growagardenpro.com"); // replace with actual endpoint
       ws.on("open", () => ws.send(JSON.stringify({ action: "getStock" })));
       ws.on("message", data => {
         resolve(JSON.parse(data));
