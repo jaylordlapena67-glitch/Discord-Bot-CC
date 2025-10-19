@@ -28,13 +28,15 @@ module.exports = {
     userCooldowns[userId] = now;
 
     try {
+      // Show typing indicator
+      await message.channel.sendTyping();
+
       // Call Aria-Ai API
       const response = await axios.get(
         `https://betadash-api-swordslush-production.up.railway.app/Aria?ask=${encodeURIComponent(message.content)}&userid=${userId}&stream=`
       );
 
       const ariaContent = response.data?.response?.trim() || "⚠️ No response from the API.";
-      const followUps = response.data?.extra_content?.follow_up_questions || [];
 
       // Function to send embed safely
       const sendEmbed = async (text, title = "Aria-Ai") => {
@@ -53,12 +55,6 @@ module.exports = {
       } else {
         const chunks = ariaContent.match(/[\s\S]{1,4000}/g);
         for (const chunk of chunks) await sendEmbed(chunk, "Aria-Ai Response");
-      }
-
-      // Send follow-up questions if any
-      if (followUps.length > 0) {
-        const followUpText = followUps.map((q, i) => `**${i + 1}.** ${q}`).join("\n");
-        await sendEmbed(followUpText, "Aria-Ai Follow-Up Questions");
       }
 
     } catch (err) {
