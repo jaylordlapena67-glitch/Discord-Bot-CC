@@ -90,6 +90,7 @@ async function applyHighestRoleEmoji(member) {
     if (member.displayName !== newNickname) {
       await member.setNickname(newNickname).catch(() => {});
     }
+
   } catch (err) {
     console.error(`❌ Failed to apply emoji nickname for ${member.user.tag}:`, err);
   }
@@ -108,43 +109,35 @@ client.once('ready', async () => {
 
   // Load stock modules
   const pvbstock = client.commands.get("pvbstock");
-  const gagstock = client.commands.get("gagstock");
   if (pvbstock?.onReady) await pvbstock.onReady(client);
-  if (gagstock?.onReady) await gagstock.onReady(client);
 
   // Stock check loop every aligned 5 mins
   (async function alignedStockLoop() {
-  console.log("🔁 Starting aligned stock check loop...");
-  while (true) {
-    await waitUntilNextAligned();
-    console.log(`🕒 Stock check started (${new Date().toLocaleTimeString()})`);
+    console.log("🔁 Starting aligned stock check loop...");
+    while (true) {
+      await waitUntilNextAligned();
+      console.log(`🕒 Stock check started (${new Date().toLocaleTimeString()})`);
 
-    let updated = false;
-
-    // Check every 10s up to 5 min (30 × 10s)
-    for (let i = 0; i < 30; i++) {
-      try {
-        const pvbstock = client.commands.get("pvbstock");
-        const gagstock = client.commands.get("gagstock");
-
-        const pvbChanged = pvbstock?.checkForUpdate ? await pvbstock.checkForUpdate(client) : false;
-        const gagChanged = gagstock?.checkForUpdate ? await gagstock.checkForUpdate(client) : false;
-
-        if (pvbChanged || gagChanged) {
-          console.log("✅ Stock updated — notifications sent!");
-          updated = true;
-          break;
+      let updated = false;
+      for (let i = 0; i < 240; i++) {
+        try {
+          const pvbChanged = pvbstock?.checkForUpdate ? await pvbstock.checkForUpdate(client) : false;
+          if (pvbChanged) {
+            console.log("✅ Stock updated — notifications sent!");
+            updated = true;
+            break;
+          }
+        } catch (err) {
+          console.error("⚠️ Stock check error:", err);
         }
-      } catch (err) {
-        console.error("⚠️ Stock check error:", err);
+        await new Promise(res => setTimeout(res, 1000));
       }
 
-      await new Promise(res => setTimeout(res, 10000)); // 10s
+      if (!updated) console.log("⌛ No stock update found — waiting next aligned time.");
+      await new Promise(res => setTimeout(res, 1000));
     }
 
-    if (!updated) console.log("⌛ No stock update found — waiting next aligned time.");
-  }
-})();
+  })();
 
   // Update nickname emojis
   console.log("🔄 Updating emoji nicknames for all members...");
@@ -195,7 +188,7 @@ client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot || !message.guild) return;
 
   // === Auto WFL React ===
-  const wflRegex = /\b(?:win\s*or\s*lose|win\s*lose|w[\s\/\.\-]*f[\s\/\.\-]*l)\b/i;
+  const wflRegex = /\b(?:win\sor\slose|win\s*lose|w[\s/.-]*f[\s/.-]*l)\b/i;
   if (wflRegex.test(message.content)) {
     try {
       await message.react('🇼');
