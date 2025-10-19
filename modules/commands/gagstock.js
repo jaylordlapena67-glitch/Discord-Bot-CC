@@ -1,20 +1,20 @@
 const { PermissionsBitField, EmbedBuilder } = require("discord.js");
-const axios = require("axios");
-const { getData, setData } = require("../../database.js");
+const WebSocket = require("ws");
+const { setData, getData } = require("../../database.js");
 
 let lastGlobalUpdate = null;
+let lastSendTime = 0; // 🕒 anti-spam limiter (5s cooldown)
 
 module.exports = {
   config: {
     name: "gagstock",
-    description: "Grow A Garden auto-stock every restock time (Admin only)",
+    description: "Grow A Garden auto-stock every aligned 5-minute interval (Admin only)",
     usage: "-gagstock <on|off|check>",
     cooldown: 5,
     permission: 0,
     aliases: ["gagstocks"],
   },
 
-  // 🌿 Emoji Dictionary
   ITEM_EMOJI: {
     Carrot: "🥕", Strawberry: "🍓", Blueberry: "🫐", Tomato: "🍅",
     Corn: "🌽", Daffodil: "🌼", Watermelon: "🍉", Pumpkin: "🎃",
@@ -46,7 +46,64 @@ module.exports = {
     return this.ITEM_EMOJI[name.replace(/ Seed$/i, "").trim()] || "❔";
   },
 
-  // 🌱 Command Handler
+  // 🌿 WebSocket stock fetch
+  async fetchGAGStock() {
+    return new Promise((resolve) => {
+      const ws = new WebSocket("wss://ws.growagardenpro.com");
+      let resolved = false;
+
+      ws.on("open", () => ws.send(JSON.stringify({ action: "getStock" })));
+
+      ws.on("message", (data) => {
+        if (resolved) return; // 🧠 ignore duplicate WS packets
+        resolved = true;
+
+        try {
+          const parsed = JSON.parse(data);
+          resolve(parsed);
+        } catch {
+          resolve({});
+        } finally {
+          ws.close();
+        }
+      });
+
+      ws.on("error", (err) => {
+        console.error("❌ [GAG] WebSocket error:", err);
+        resolve({});
+      });
+
+      ws.on("close", () => {
+        if (!resolved) resolve({});
+      });
+    });
+  },
+
+  // 🪴 Embed sender
+  async sendStock(client, channelId, items) {
+    const channel = await client.channels.fetch(channelId).catch(() => null);
+    if (!channel) return;
+
+    const description = ["Seeds", "Gear", "Eggs"]
+      .map((cat) => {
+        const arr = items.filter((i) =>
+          cat === "Seeds" ? i.type === "seed" :
+          cat === "Gear" ? i.type === "gear" : i.type === "egg"
+        );
+        return `**${cat}**\n${arr.map((i) => `• ${this.getEmoji(i.name)} **${i.name}** (${i.quantity})`).join("\n") || "❌ Empty"}`;
+      })
+      .join("\n\n");
+
+    const embed = new EmbedBuilder()
+      .setTitle("🪴 Grow A Garden Stock Update")
+      .setDescription(description.slice(0, 4096))
+      .setColor(0xff0080)
+      .setTimestamp();
+
+    await channel.send({ embeds: [embed] });
+  },
+
+  // ⚙️ Command handler
   async letStart({ args, message, discord }) {
     const client = discord.client;
     if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator))
@@ -60,7 +117,8 @@ module.exports = {
     const channelId = message.channel.id;
     const allData = (await getData("gagstock/discord")) || {};
     let gcData = allData[guildId];
-    if (!gcData || !Array.isArray(gcData.channels)) gcData = { enabled: false, channels: [] };
+    if (!gcData || !Array.isArray(gcData.channels))
+      gcData = { enabled: false, channels: [] };
 
     if (action === "on") {
       if (!gcData.channels.includes(channelId)) gcData.channels.push(channelId);
@@ -85,78 +143,41 @@ module.exports = {
     }
   },
 
-  // 🌾 Fetch data from API
-  async fetchGAGStock() {
-    try {
-      const response = await axios.get("https://api.growagarden.me/stock");
-      return response.data?.data || {};
-    } catch (err) {
-      console.error("❌ [GAG] fetchGAGStock error:", err.message);
-      return {};
-    }
-  },
-
-  // 🧩 Format and send stock embed
-  async sendStock(client, channelId, items) {
-    const channel = await client.channels.fetch(channelId).catch(() => null);
-    if (!channel) return;
-
-    const categories = ["Seeds", "Gear", "Eggs"];
-    const sections = categories
-      .map((cat) => {
-        const arr = items.filter((i) =>
-          cat === "Seeds" ? i.type === "seed" :
-          cat === "Gear" ? i.type === "gear" : i.type === "egg"
-        );
-        return `**${cat}**\n${arr.map((i) => `• ${this.getEmoji(i.name)} **${i.name}** (${i.quantity})`).join("\n") || "❌ Empty"}`;
-      })
-      .join("\n\n");
-
-    const embed = new EmbedBuilder()
-      .setTitle("🪴 Grow A Garden Stock Update")
-      .setDescription(sections.slice(0, 4096))
-      .setColor(0xff80aa)
-      .setFooter({ text: "🌱 Auto-updated from Grow A Garden API" })
-      .setTimestamp();
-
-    await channel.send({ embeds: [embed] });
-  },
-
-  // 🔁 Called every 1s from main.js
+  // 🔁 Called every aligned check by main.js
   async checkForUpdate(client) {
     try {
+      const now = Date.now();
+      if (now - lastSendTime < 5000) return; // 🧊 ignore if <5s since last send
       const stockData = await this.fetchGAGStock();
-      const currentUpdate = stockData?.lastGlobalUpdate;
-      if (!currentUpdate) return;
+      const currentUpdate = stockData?.data?.lastGlobalUpdate;
 
-      // Prevent duplicate sends
-      if (currentUpdate === lastGlobalUpdate) return;
+      if (!currentUpdate || currentUpdate === lastGlobalUpdate) return;
       lastGlobalUpdate = currentUpdate;
+      lastSendTime = now;
 
-      console.log(`✅ [GAG] New stock update: ${currentUpdate}`);
-
-      // Filter items
-      const items = [
-        ...(stockData.seeds || []),
-        ...(stockData.gear || []),
-        ...(stockData.eggs || []),
-        ...(stockData.events || []),
-        ...(stockData.honey || []),
-      ].filter((i) => ["seed", "gear", "egg"].includes(i.type) && i.available);
-
-      if (items.length === 0) return;
+      console.log(`✅ [GAG] Stock updated at ${new Date().toLocaleTimeString()}`);
 
       const allData = (await getData("gagstock/discord")) || {};
       for (const guildId in allData) {
         const gcData = allData[guildId];
         if (!gcData?.enabled || !Array.isArray(gcData.channels)) continue;
 
+        const items = [
+          ...(stockData.data.seeds || []),
+          ...(stockData.data.gear || []),
+          ...(stockData.data.events || []),
+          ...(stockData.data.honey || []),
+          ...(stockData.data.eggs || []),
+        ].filter((i) => ["seed", "gear", "egg"].includes(i.type));
+
+        if (items.length === 0) continue;
+
         for (const chId of gcData.channels) {
           await this.sendStock(client, chId, items);
         }
       }
     } catch (err) {
-      console.error("❌ [GAG] checkForUpdate error:", err.message);
+      console.error("❌ [GAG] checkForUpdate error:", err);
     }
   },
 };
