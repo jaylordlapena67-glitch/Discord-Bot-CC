@@ -1,13 +1,11 @@
 const { PermissionsBitField, EmbedBuilder } = require("discord.js");
-const WebSocket = require("ws");
+const axios = require("axios");
 const { setData, getData } = require("../../database.js");
-
-const lastSendTimestamps = {}; // Anti-spam per channel
 
 module.exports = {
   config: {
     name: "gagstock",
-    description: "Grow A Garden auto-stock every aligned 5-minute interval (Admin only)",
+    description: "Grow A Garden auto-stock based on lastGlobalUpdate (Admin only)",
     usage: "-gagstock <on|off|check>",
     cooldown: 5,
     permission: 0,
@@ -46,43 +44,16 @@ module.exports = {
   },
 
   async fetchGAGStock() {
-    return new Promise((resolve) => {
-      const ws = new WebSocket("wss://ws.growagardenpro.com");
-      let resolved = false;
-
-      ws.on("open", () => ws.send(JSON.stringify({ action: "getStock" })));
-
-      ws.on("message", (data) => {
-        if (resolved) return;
-        resolved = true;
-
-        try {
-          const parsed = JSON.parse(data);
-          resolve(parsed);
-        } catch {
-          resolve({});
-        } finally {
-          ws.close();
-        }
-      });
-
-      ws.on("error", (err) => {
-        console.error("❌ [GAG] WebSocket error:", err);
-        resolve({});
-      });
-
-      ws.on("close", () => {
-        if (!resolved) resolve({});
-      });
-    });
+    try {
+      const { data } = await axios.get("https://gagapi.onrender.com/alldata", { timeout: 10000 });
+      return data || {};
+    } catch (err) {
+      console.error("❌ [GAG] API fetch error:", err.message);
+      return {};
+    }
   },
 
   async sendStock(client, channelId, items) {
-    const now = Date.now();
-    const lastSent = lastSendTimestamps[channelId] || 0;
-    if (now - lastSent < 5000) return; // 5-second per-channel cooldown
-    lastSendTimestamps[channelId] = now;
-
     const channel = await client.channels.fetch(channelId).catch(() => null);
     if (!channel) return;
 
@@ -152,15 +123,15 @@ module.exports = {
   async checkForUpdate(client) {
     try {
       const stockData = await this.fetchGAGStock();
-      const currentUpdate = stockData?.data?.lastGlobalUpdate;
+      const currentUpdate = stockData?.lastGlobalUpdate;
       if (!currentUpdate) return;
 
-      // Only send if there's a new global update
+      // ✅ Only send if there's a new global update
       const lastSaved = await getData("gagstock/lastGlobalUpdate") || null;
       if (currentUpdate === lastSaved) return;
 
       await setData("gagstock/lastGlobalUpdate", currentUpdate);
-      console.log(`✅ [GAG] Stock updated at ${new Date().toLocaleTimeString()}`);
+      console.log(`✅ [GAG] Detected new stock update: ${currentUpdate}`);
 
       const allData = (await getData("gagstock/discord")) || {};
       for (const guildId in allData) {
@@ -168,12 +139,11 @@ module.exports = {
         if (!gcData?.enabled || !Array.isArray(gcData.channels)) continue;
 
         const items = [
-          ...(stockData.data.seeds || []),
-          ...(stockData.data.gear || []),
-          ...(stockData.data.events || []),
-          ...(stockData.data.honey || []),
-          ...(stockData.data.eggs || [])
-        ].filter((i) => ["seed", "gear", "egg"].includes(i.type));
+          ...(stockData.seeds || []).map(i => ({ ...i, type: "seed" })),
+          ...(stockData.gear || []).map(i => ({ ...i, type: "gear" })),
+          ...(stockData.eggs || []).map(i => ({ ...i, type: "egg" })),
+          ...(stockData.events || []).map(i => ({ ...i, type: "event" }))
+        ].filter(i => ["seed", "gear", "egg"].includes(i.type));
 
         if (items.length === 0) continue;
 
