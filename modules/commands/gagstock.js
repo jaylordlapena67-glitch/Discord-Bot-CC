@@ -88,7 +88,8 @@ module.exports = {
       .map((cat) => {
         const arr = items.filter((i) =>
           cat === "Seeds" ? i.type === "seed" :
-          cat === "Gear" ? i.type === "gear" : i.type === "egg"
+          cat === "Gear" ? i.type === "gear" : 
+          cat === "Eggs" ? i.type === "egg"
         );
         return `**${cat}**\n${arr.map((i) => `• ${this.getEmoji(i.name)} **${i.name}** (${i.quantity})`).join("\n") || "❌ Empty"}`;
       })
