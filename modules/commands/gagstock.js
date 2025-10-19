@@ -1,4 +1,4 @@
-mmconst { PermissionsBitField, EmbedBuilder } = require("discord.js");
+const { PermissionsBitField, EmbedBuilder } = require("discord.js");
 const WebSocket = require("ws");
 const { setData, getData } = require("../../database.js");
 
@@ -9,7 +9,7 @@ module.exports = {
     usage: "-gagstock <on|off|check>",
     cooldown: 5,
     permission: 0,
-    aliases: ["gagstocks"],
+    aliases: ["gagstocks"]
   },
 
   ITEM_EMOJI: {
@@ -29,21 +29,20 @@ module.exports = {
     "Grandmaster Sprinkler": "🌟", "Levelup Lollipop": "🍭",
     "Common Egg": "🥚", "Uncommon Egg": "🥚", "Rare Egg": "🥚",
     "Legendary Egg": "🥚", "Mythical Egg": "🥚", "Bug Egg": "🐛",
-    ExoticBugEgg: "🐞", Night Egg: "🌙", PremiumNightEgg: "🌙",
-    BeeEgg: "🐝", AntiBeeEgg: "🐝", PremiumAntiBeeEgg: "🐝",
-    "Common Summer Egg": "🌞", "Rare Summer Egg": "🌞", ParadiseEgg: "🦩",
-    OasisEgg: "🏝", DinosaurEgg: "🦖", PrimalEgg: "🦕",
-    PremiumPrimalEgg: "🦖", RainbowPremiumPrimalEgg: "🌈🦕",
+    "Exotic Bug Egg": "🐞", "Night Egg": "🌙", "Premium Night Egg": "🌙",
+    "Bee Egg": "🐝", "Anti Bee Egg": "🐝", "Premium Anti Bee Egg": "🐝",
+    "Common Summer Egg": "🌞", "Rare Summer Egg": "🌞", "Paradise Egg": "🦩",
+    "Oasis Egg": "🏝", "Dinosaur Egg": "🦖", "Primal Egg": "🦕",
+    "Premium Primal Egg": "🦖", "Rainbow Premium Primal Egg": "🌈🦕",
     "Zen Egg": "🐕", "Gourmet Egg": "🍳", "Sprout Egg": "🌱",
     "Enchanted Egg": "🧚", "Fall Egg": "🍂", "Premium Fall Egg": "🍂",
-    "Jungle Egg": "🌳", "Spooky Egg": "👻",
+    "Jungle Egg": "🌳", "Spooky Egg": "👻"
   },
 
   getEmoji(name) {
     return this.ITEM_EMOJI[name.replace(/ Seed$/i, "").trim()] || "❔";
   },
 
-  // 🌿 WebSocket stock fetch
   async fetchGAGStock() {
     return new Promise((resolve) => {
       const ws = new WebSocket("wss://ws.growagardenpro.com");
@@ -76,16 +75,16 @@ module.exports = {
     });
   },
 
-  // 🪴 Embed sender
   async sendStock(client, channelId, items) {
     const channel = await client.channels.fetch(channelId).catch(() => null);
     if (!channel) return;
 
     const description = ["Seeds", "Gear", "Eggs"]
       .map((cat) => {
-        const arr = items.filter((i) =>
+        const arr = items.filter((i) => 
           cat === "Seeds" ? i.type === "seed" :
-          cat === "Gear" ? i.type === "gear" : i.type === "egg" : []
+          cat === "Gear" ? i.type === "gear" :
+          i.type === "Eggs" ? i.type === "egg" : false
         );
         return `**${cat}**\n${arr.map((i) => `• ${this.getEmoji(i.name)} **${i.name}** (${i.quantity})`).join("\n") || "❌ Empty"}`;
       })
@@ -100,9 +99,12 @@ module.exports = {
     await channel.send({ embeds: [embed] });
   },
 
-  // ⚙️ Command handler
-  async letStart({ args, message, discord }) {
+  async letStart(ctx) {
+    const args = ctx.args;
+    const message = ctx.message;
+    const discord = ctx.discord;
     const client = discord.client;
+
     if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator))
       return message.reply("🚫 Only Admins can use this command.");
 
@@ -140,7 +142,6 @@ module.exports = {
     }
   },
 
-  // 🔁 Called every aligned check by main.js
   async checkForUpdate(client) {
     try {
       const stockData = await this.fetchGAGStock();
@@ -149,9 +150,8 @@ module.exports = {
 
       // Load lastGlobalUpdate from DB
       const lastSaved = await getData("gagstock/lastGlobalUpdate") || null;
-      if (currentUpdate === lastSaved) return; // ❌ No new update, do nothing
+      if (currentUpdate === lastSaved) return;
 
-      // ✅ Save new update timestamp
       await setData("gagstock/lastGlobalUpdate", currentUpdate);
       console.log(`✅ [GAG] Stock updated at ${new Date().toLocaleTimeString()}`);
 
@@ -165,7 +165,7 @@ module.exports = {
           ...(stockData.data.gear || []),
           ...(stockData.data.events || []),
           ...(stockData.data.honey || []),
-          ...(stockData.data.eggs || []),
+          ...(stockData.data.eggs || [])
         ].filter((i) => ["seed", "gear", "egg"].includes(i.type));
 
         if (items.length === 0) continue;
@@ -177,5 +177,5 @@ module.exports = {
     } catch (err) {
       console.error("❌ [GAG] checkForUpdate error:", err);
     }
-  },
+  }
 };
