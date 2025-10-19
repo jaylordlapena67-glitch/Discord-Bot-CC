@@ -114,31 +114,37 @@ client.once('ready', async () => {
 
   // Stock check loop every aligned 5 mins
   (async function alignedStockLoop() {
-    console.log("🔁 Starting aligned stock check loop...");
-    while (true) {
-      await waitUntilNextAligned();
-      console.log(`🕒 Stock check started (${new Date().toLocaleTimeString()})`);
+  console.log("🔁 Starting aligned stock check loop...");
+  while (true) {
+    await waitUntilNextAligned();
+    console.log(`🕒 Stock check started (${new Date().toLocaleTimeString()})`);
 
-      let updated = false;
-      for (let i = 0; i < 240; i++) {
-        try {
-          const pvbChanged = pvbstock?.checkForUpdate ? await pvbstock.checkForUpdate(client) : false;
-          const gagChanged = gagstock?.checkForUpdate ? await gagstock.checkForUpdate(client) : false;
-          if (pvbChanged || gagChanged) {
-            console.log("✅ Stock updated — notifications sent!");
-            updated = true;
-            break;
-          }
-        } catch (err) {
-          console.error("⚠️ Stock check error:", err);
+    let updated = false;
+
+    // Check every 10s up to 5 min (30 × 10s)
+    for (let i = 0; i < 30; i++) {
+      try {
+        const pvbstock = client.commands.get("pvbstock");
+        const gagstock = client.commands.get("gagstock");
+
+        const pvbChanged = pvbstock?.checkForUpdate ? await pvbstock.checkForUpdate(client) : false;
+        const gagChanged = gagstock?.checkForUpdate ? await gagstock.checkForUpdate(client) : false;
+
+        if (pvbChanged || gagChanged) {
+          console.log("✅ Stock updated — notifications sent!");
+          updated = true;
+          break;
         }
-        await new Promise(res => setTimeout(res, 1000));
+      } catch (err) {
+        console.error("⚠️ Stock check error:", err);
       }
 
-      if (!updated) console.log("⌛ No stock update found — waiting next aligned time.");
-      await new Promise(res => setTimeout(res, 1000));
+      await new Promise(res => setTimeout(res, 10000)); // 10s
     }
-  })();
+
+    if (!updated) console.log("⌛ No stock update found — waiting next aligned time.");
+  }
+})();
 
   // Update nickname emojis
   console.log("🔄 Updating emoji nicknames for all members...");
