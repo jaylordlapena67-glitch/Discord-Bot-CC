@@ -7,16 +7,14 @@ let lastGlobalUpdate = null;
 module.exports = {
   config: {
     name: "gagstock",
-    description: "Grow a Garden (GAG) auto-stock every aligned 5-minute interval (Admin only)",
+    description: "Grow A Garden auto-stock every aligned 5-minute interval (Admin only)",
     usage: "-gagstock <on|off|check>",
     cooldown: 5,
     permission: 0,
     aliases: ["gagstocks"],
   },
 
-  // 🌱 ITEM EMOJIS
   ITEM_EMOJI: {
-    // Seeds
     Carrot: "🥕", Strawberry: "🍓", Blueberry: "🫐", Tomato: "🍅",
     Corn: "🌽", Daffodil: "🌼", Watermelon: "🍉", Pumpkin: "🎃",
     Apple: "🍎", Bamboo: "🎋", Coconut: "🥥", Cactus: "🌵",
@@ -25,16 +23,12 @@ module.exports = {
     "Burning Bud": "🔥", "Giant Pinecone": "🌲", "Elder Strawberry": "🍓",
     Romanesco: "🥦", "Crimson Thorn": "🌹", "Great Pumpkin": "🎃", Potato: "🥔",
     "Brussels Sprouts": "🥬", Cocomango: "🥭", Broccoli: "🥦", "Orange Tulip": "🌷",
-
-    // Gear
     "Watering Can": "🌊", "Trading Ticket": "🎫", Trowel: "🪓", "Recall Wrench": "🔧",
     "Basic Sprinkler": "🌧", "Advanced Sprinkler": "💦", "Godly Sprinkler": "⚡",
     "Magnifying Glass": "🔍", "Master Sprinkler": "🏆", "Cleaning Spray": "🧴",
     "Cleansing PetShard": "🪄", "Favorite Tool": "⭐", "Harvest Tool": "🌾",
     "Friendship Pot": "🤝", "Medium Toy": "🧸", "Medium Treat": "🍪",
     "Grandmaster Sprinkler": "🌟", "Levelup Lollipop": "🍭",
-
-    // Eggs
     "Common Egg": "🥚", "Uncommon Egg": "🥚", "Rare Egg": "🥚",
     "Legendary Egg": "🥚", "Mythical Egg": "🥚", "Bug Egg": "🐛",
     ExoticBugEgg: "🐞", "Night Egg": "🌙", "Premium Night Egg": "🌙",
@@ -51,7 +45,6 @@ module.exports = {
     return this.ITEM_EMOJI[name.replace(/ Seed$/i, "").trim()] || "❔";
   },
 
-  // 🔍 Fetch GAG stock via WebSocket
   async fetchGAGStock() {
     return new Promise(resolve => {
       const ws = new WebSocket("wss://ws.growagardenpro.com");
@@ -71,25 +64,22 @@ module.exports = {
     });
   },
 
-  // 📤 Send stock embed
   async sendStock(client, channelId, items) {
     const channel = await client.channels.fetch(channelId).catch(() => null);
     if (!channel) return;
 
-    const categories = {
-      Seeds: items.filter(i => i.type === "seed"),
-      Gear: items.filter(i => i.type === "gear"),
-      Eggs: items.filter(i => i.type === "egg"),
-    };
-
-    const description = Object.entries(categories)
-      .map(([cat, arr]) =>
-        `**${cat}**\n${arr.map(i => `• ${this.getEmoji(i.name)} **${i.name}** (${i.quantity})`).join("\n") || "❌ Empty"}`
-      )
+    const description = ["Seeds", "Gear", "Eggs"]
+      .map(cat => {
+        const arr = items.filter(i =>
+          cat === "Seeds" ? i.type === "seed" :
+          cat === "Gear" ? i.type === "gear" : i.type === "egg"
+        );
+        return `**${cat}**\n${arr.map(i => `• ${this.getEmoji(i.name)} **${i.name}** (${i.quantity})`).join("\n") || "❌ Empty"}`;
+      })
       .join("\n\n");
 
     const embed = new EmbedBuilder()
-      .setTitle("🪴 Grow a Garden Stock Update")
+      .setTitle("🪴 Grow A Garden Stock Update")
       .setDescription(description.slice(0, 4096))
       .setColor(0xff0080)
       .setTimestamp();
@@ -97,8 +87,8 @@ module.exports = {
     await channel.send({ embeds: [embed] });
   },
 
-  // ⚙️ Command Handler
-  async run(client, message, args) {
+  async letStart({ args, message, discord }) {
+    const client = discord.client;
     if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator))
       return message.reply("🚫 Only Admins can use this command.");
 
@@ -109,7 +99,8 @@ module.exports = {
     const guildId = message.guild.id;
     const channelId = message.channel.id;
     const allData = (await getData("gagstock/discord")) || {};
-    const gcData = allData[guildId] || { enabled: false, channels: [] };
+    let gcData = allData[guildId];
+    if (!gcData || !Array.isArray(gcData.channels)) gcData = { enabled: false, channels: [] };
 
     if (action === "on") {
       if (!gcData.channels.includes(channelId)) gcData.channels.push(channelId);
@@ -134,52 +125,47 @@ module.exports = {
     }
   },
 
-  // 🔁 Auto-loop: checks every aligned 5-minute interval
   async onReady(client) {
-    console.log("🔁 GAG module ready — starting aligned 5-min stock loop...");
+    console.log("🪴 [GAG] Module ready — starting aligned 5-min loop...");
 
     const loop = async () => {
       const now = new Date();
       const next = new Date(now);
       const alignedMinute = Math.ceil((now.getMinutes() + 1) / 5) * 5;
-
       if (alignedMinute === 60) next.setHours(now.getHours() + 1, 0, 0, 0);
       else next.setMinutes(alignedMinute, 0, 0);
 
       const delay = next - now;
-      console.log(`⏳ Waiting until next 5-min mark: ${next.toLocaleTimeString()}`);
+      console.log(`🕒 [GAG] Waiting until ${next.toLocaleTimeString()}...`);
 
       setTimeout(async () => {
-        console.log("🕒 Checking stock updates...");
-
         const interval = setInterval(async () => {
           const stockData = await module.exports.fetchGAGStock();
           const currentUpdate = stockData?.data?.lastGlobalUpdate;
 
           if (currentUpdate && currentUpdate !== lastGlobalUpdate) {
             lastGlobalUpdate = currentUpdate;
-            console.log("📦 Detected new GAG stock update!");
+            console.log(`✅ [GAG] Stock updated at ${new Date().toLocaleTimeString()}`);
 
             const allData = (await getData("gagstock/discord")) || {};
             for (const guildId in allData) {
               const gcData = allData[guildId];
-              if (!gcData.enabled) continue;
+              if (!gcData?.enabled || !Array.isArray(gcData.channels)) continue;
 
               for (const chId of gcData.channels) {
-                const allItems = [
+                const items = [
                   ...(stockData.data.seeds || []),
                   ...(stockData.data.gear || []),
                   ...(stockData.data.events || []),
                   ...(stockData.data.honey || []),
                 ].filter(i => ["seed", "gear", "egg"].includes(i.type));
 
-                if (allItems.length > 0)
-                  await module.exports.sendStock(client, chId, allItems);
+                if (items.length > 0)
+                  await module.exports.sendStock(client, chId, items);
               }
             }
 
             clearInterval(interval);
-            console.log("✅ Update sent! Waiting for next 5-min mark...");
             loop();
           }
         }, 1000);
