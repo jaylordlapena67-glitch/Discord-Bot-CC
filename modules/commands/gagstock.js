@@ -59,7 +59,7 @@ module.exports = {
 
     const description = ["Seeds", "Gear", "Eggs"]
       .map((cat) => {
-        const arr = items.filter((i) => 
+        const arr = items.filter((i) =>
           cat === "Seeds" ? i.type === "seed" :
           cat === "Gear" ? i.type === "gear" :
           cat === "Eggs" ? i.type === "egg" : false
@@ -120,39 +120,74 @@ module.exports = {
     }
   },
 
-  async checkForUpdate(client) {
-    try {
-      const stockData = await this.fetchGAGStock();
-      const currentUpdate = stockData?.lastGlobalUpdate;
-      if (!currentUpdate) return;
+  async startAutoCheck(client) {
+    console.log("[GAG] ⏳ Starting aligned 5-minute stock watcher...");
+    let checkingInterval = null;
 
-      // ✅ Only send if there's a new global update
-      const lastSaved = await getData("gagstock/lastGlobalUpdate") || null;
-      if (currentUpdate === lastSaved) return;
+    const waitUntilNextAligned = () => {
+      const now = new Date();
+      const mins = now.getMinutes();
+      const nextAligned = Math.ceil(mins / 5) * 5;
+      const next = new Date(now);
+      next.setMinutes(nextAligned);
+      next.setSeconds(0);
+      next.setMilliseconds(0);
+      if (next <= now) next.setMinutes(next.getMinutes() + 5);
 
-      await setData("gagstock/lastGlobalUpdate", currentUpdate);
-      console.log(`✅ [GAG] Detected new stock update: ${currentUpdate}`);
+      const waitMs = next - now;
+      console.log(`[GAG] Waiting ${Math.round(waitMs / 1000)}s until next aligned time...`);
+      setTimeout(startSecondCheck, waitMs);
+    };
 
-      const allData = (await getData("gagstock/discord")) || {};
-      for (const guildId in allData) {
-        const gcData = allData[guildId];
-        if (!gcData?.enabled || !Array.isArray(gcData.channels)) continue;
+    const startSecondCheck = async () => {
+      console.log("[GAG] 🕒 Aligned time reached — checking API every second...");
+      clearInterval(checkingInterval);
 
-        const items = [
-          ...(stockData.seeds || []).map(i => ({ ...i, type: "seed" })),
-          ...(stockData.gear || []).map(i => ({ ...i, type: "gear" })),
-          ...(stockData.eggs || []).map(i => ({ ...i, type: "egg" })),
-          ...(stockData.events || []).map(i => ({ ...i, type: "event" }))
-        ].filter(i => ["seed", "gear", "egg"].includes(i.type));
+      checkingInterval = setInterval(async () => {
+        try {
+          const stockData = await module.exports.fetchGAGStock();
+          const apiUpdate = stockData?.lastGlobalUpdate;
+          if (!apiUpdate) return;
 
-        if (items.length === 0) continue;
+          const lastSaved = await getData("gagstock/lastGlobalUpdate");
+          if (apiUpdate !== lastSaved) {
+            await setData("gagstock/lastGlobalUpdate", apiUpdate);
+            console.log(`[GAG] ✅ Detected update: ${apiUpdate}`);
+            await module.exports.broadcastStock(client, stockData);
 
-        for (const chId of gcData.channels) {
-          await this.sendStock(client, chId, items);
+            clearInterval(checkingInterval);
+            waitUntilNextAligned();
+          }
+        } catch (err) {
+          if (err.response?.status === 429) {
+            console.log("⚠️ [GAG] Rate limited, pausing 15s...");
+            clearInterval(checkingInterval);
+            setTimeout(startSecondCheck, 15000);
+          } else {
+            console.log("❌ [GAG] API check error:", err.message);
+          }
         }
+      }, 1000);
+    };
+
+    waitUntilNextAligned();
+  },
+
+  async broadcastStock(client, stockData) {
+    const allData = (await getData("gagstock/discord")) || {};
+    for (const guildId in allData) {
+      const gcData = allData[guildId];
+      if (!gcData?.enabled || !Array.isArray(gcData.channels)) continue;
+
+      const items = [
+        ...(stockData.seeds || []).map(i => ({ ...i, type: "seed" })),
+        ...(stockData.gear || []).map(i => ({ ...i, type: "gear" })),
+        ...(stockData.eggs || []).map(i => ({ ...i, type: "egg" }))
+      ];
+
+      for (const chId of gcData.channels) {
+        await module.exports.sendStock(client, chId, items);
       }
-    } catch (err) {
-      console.error("❌ [GAG] checkForUpdate error:", err);
     }
   }
 };
