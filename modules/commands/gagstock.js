@@ -7,13 +7,14 @@ let lastGlobalUpdate = null;
 module.exports = {
   config: {
     name: "gagstock",
-    description: "GAG auto-stock every aligned 5-minute interval",
+    description: "Grow a Garden (GAG) auto-stock every aligned 5-minute interval (Admin only)",
     usage: "-gagstock <on|off|check>",
     cooldown: 5,
     permission: 0,
-    aliases: [],
+    aliases: ["gagstocks"],
   },
 
+  // 🌱 ITEM EMOJIS
   ITEM_EMOJI: {
     // Seeds
     Carrot: "🥕", Strawberry: "🍓", Blueberry: "🫐", Tomato: "🍅",
@@ -50,6 +51,7 @@ module.exports = {
     return this.ITEM_EMOJI[name.replace(/ Seed$/i, "").trim()] || "❔";
   },
 
+  // 🔍 Fetch GAG stock via WebSocket
   async fetchGAGStock() {
     return new Promise(resolve => {
       const ws = new WebSocket("wss://ws.growagardenpro.com");
@@ -69,15 +71,18 @@ module.exports = {
     });
   },
 
+  // 📤 Send stock embed
   async sendStock(client, channelId, items) {
     const channel = await client.channels.fetch(channelId).catch(() => null);
     if (!channel) return;
 
-    const description = Object.entries({
+    const categories = {
       Seeds: items.filter(i => i.type === "seed"),
       Gear: items.filter(i => i.type === "gear"),
       Eggs: items.filter(i => i.type === "egg"),
-    })
+    };
+
+    const description = Object.entries(categories)
       .map(([cat, arr]) =>
         `**${cat}**\n${arr.map(i => `• ${this.getEmoji(i.name)} **${i.name}** (${i.quantity})`).join("\n") || "❌ Empty"}`
       )
@@ -85,14 +90,15 @@ module.exports = {
 
     const embed = new EmbedBuilder()
       .setTitle("🪴 Grow a Garden Stock Update")
-      .setDescription(description)
+      .setDescription(description.slice(0, 4096))
       .setColor(0xff0080)
       .setTimestamp();
 
     await channel.send({ embeds: [embed] });
   },
 
-  async letStart({ args, message }) {
+  // ⚙️ Command Handler
+  async run(client, message, args) {
     if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator))
       return message.reply("🚫 Only Admins can use this command.");
 
@@ -128,15 +134,15 @@ module.exports = {
     }
   },
 
+  // 🔁 Auto-loop: checks every aligned 5-minute interval
   async onReady(client) {
     console.log("🔁 GAG module ready — starting aligned 5-min stock loop...");
 
     const loop = async () => {
-      // Get next 5-min aligned time
       const now = new Date();
-      const minutes = now.getMinutes();
       const next = new Date(now);
-      const alignedMinute = Math.ceil((minutes + 1) / 5) * 5;
+      const alignedMinute = Math.ceil((now.getMinutes() + 1) / 5) * 5;
+
       if (alignedMinute === 60) next.setHours(now.getHours() + 1, 0, 0, 0);
       else next.setMinutes(alignedMinute, 0, 0);
 
@@ -144,7 +150,7 @@ module.exports = {
       console.log(`⏳ Waiting until next 5-min mark: ${next.toLocaleTimeString()}`);
 
       setTimeout(async () => {
-        console.log("🕒 Aligned time reached, starting 1-second stock check...");
+        console.log("🕒 Checking stock updates...");
 
         const interval = setInterval(async () => {
           const stockData = await module.exports.fetchGAGStock();
@@ -152,12 +158,13 @@ module.exports = {
 
           if (currentUpdate && currentUpdate !== lastGlobalUpdate) {
             lastGlobalUpdate = currentUpdate;
+            console.log("📦 Detected new GAG stock update!");
 
-            // Send stock to all enabled channels
             const allData = (await getData("gagstock/discord")) || {};
             for (const guildId in allData) {
               const gcData = allData[guildId];
               if (!gcData.enabled) continue;
+
               for (const chId of gcData.channels) {
                 const allItems = [
                   ...(stockData.data.seeds || []),
@@ -165,13 +172,15 @@ module.exports = {
                   ...(stockData.data.events || []),
                   ...(stockData.data.honey || []),
                 ].filter(i => ["seed", "gear", "egg"].includes(i.type));
-                if (allItems.length > 0) await module.exports.sendStock(client, chId, allItems);
+
+                if (allItems.length > 0)
+                  await module.exports.sendStock(client, chId, allItems);
               }
             }
 
             clearInterval(interval);
-            console.log("✅ Stock updated, waiting for next aligned 5-min mark...");
-            loop(); // Repeat forever
+            console.log("✅ Update sent! Waiting for next 5-min mark...");
+            loop();
           }
         }, 1000);
       }, delay);
