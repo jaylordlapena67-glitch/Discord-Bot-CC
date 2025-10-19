@@ -2,6 +2,8 @@ const { PermissionsBitField, EmbedBuilder } = require("discord.js");
 const axios = require("axios");
 const { setData, getData } = require("../../database.js");
 
+let lastGlobalUpdate = null; // track last update globally
+
 module.exports = {
   config: {
     name: "gagstock",
@@ -46,15 +48,14 @@ module.exports = {
     if (!channel) return;
 
     const description = ["Seeds", "Gear", "Eggs"]
-      .map((cat) => {
-        const arr = items.filter((i) =>
+      .map(cat => {
+        const arr = items.filter(i =>
           cat === "Seeds" ? i.type === "seed" :
           cat === "Gear" ? i.type === "gear" :
           cat === "Eggs" ? i.type === "egg" : false
         );
-        return `**${cat}**\n${arr.map((i) => `• ${this.getEmoji(i.name)} **${i.name}** (${i.quantity})`).join("\n") || "❌ Empty"}`;
-      })
-      .join("\n\n");
+        return `**${cat}**\n${arr.map(i => `• ${this.getEmoji(i.name)} **${i.name}** (${i.quantity})`).join("\n") || "❌ Empty"}`;
+      }).join("\n\n");
 
     const embed = new EmbedBuilder()
       .setTitle("🪴 Grow A Garden Stock Update")
@@ -65,11 +66,39 @@ module.exports = {
     await channel.send({ embeds: [embed] });
   },
 
-  async letStart(ctx) {
-    const args = ctx.args;
-    const message = ctx.message;
-    const client = ctx.discord.client;
+  async checkForUpdate(client) {
+    try {
+      const stockData = await this.fetchGAGStock();
+      const currentUpdate = stockData?.lastGlobalUpdate;
+      if (!currentUpdate || currentUpdate === lastGlobalUpdate) return false;
 
+      lastGlobalUpdate = currentUpdate;
+      console.log(`✅ [GAG] Detected new stock update: ${currentUpdate}`);
+
+      const allData = (await getData("gagstock/discord")) || {};
+      for (const guildId in allData) {
+        const gcData = allData[guildId];
+        if (!gcData?.enabled || !Array.isArray(gcData.channels)) continue;
+
+        const items = [
+          ...(stockData.seeds || []).map(i => ({ ...i, type: "seed" })),
+          ...(stockData.gear || []).map(i => ({ ...i, type: "gear" })),
+          ...(stockData.eggs || []).map(i => ({ ...i, type: "egg" }))
+        ];
+
+        for (const chId of gcData.channels) {
+          await this.sendStock(client, chId, items);
+        }
+      }
+
+      return true;
+    } catch (err) {
+      console.error("❌ [GAG] checkForUpdate error:", err);
+      return false;
+    }
+  },
+
+  async letStart({ args, message }) {
     if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator))
       return message.reply("🚫 Only Admins can use this command.");
 
@@ -104,43 +133,4 @@ module.exports = {
       return message.reply(`📊 Status: ${status}\nChannels: ${channels}`);
     }
   },
-
-  async checkForUpdate(client) {
-    try {
-      // optional cooldown to avoid rapid calls
-      if (this._lastFetch && Date.now() - this._lastFetch < 10000) return false;
-      this._lastFetch = Date.now();
-
-      const stockData = await this.fetchGAGStock();
-      const currentUpdate = stockData?.lastGlobalUpdate;
-      if (!currentUpdate) return false;
-
-      const lastSaved = await getData("gagstock/lastGlobalUpdate") || null;
-      if (currentUpdate === lastSaved) return false;
-
-      await setData("gagstock/lastGlobalUpdate", currentUpdate);
-      console.log(`✅ [GAG] Detected new stock update: ${currentUpdate}`);
-
-      const allData = (await getData("gagstock/discord")) || {};
-      for (const guildId in allData) {
-        const gcData = allData[guildId];
-        if (!gcData?.enabled || !Array.isArray(gcData.channels)) continue;
-
-        const items = [
-          ...(stockData.seeds || []).map(i => ({ ...i, type: "seed" })),
-          ...(stockData.gear || []).map(i => ({ ...i, type: "gear" })),
-          ...(stockData.eggs || []).map(i => ({ ...i, type: "egg" }))
-        ];
-
-        for (const chId of gcData.channels) {
-          await this.sendStock(client, chId, items);
-        }
-      }
-
-      return true; // stock updated
-    } catch (err) {
-      console.error("❌ [GAG] checkForUpdate error:", err);
-      return false;
-    }
-  }
 };
