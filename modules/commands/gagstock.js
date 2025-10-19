@@ -26,12 +26,12 @@ module.exports = {
     BrusselsSprouts: "🥬", Cocomango: "🥭", Broccoli: "🥦", OrangeTulip: "🌷",
 
     // Gear
-    WateringCan: "🌊", TradingTicket: "🎫", Trowel: "🪓", RecallWrench: "🔧",
-    BasicSprinkler: "🌧", AdvancedSprinkler: "💦", GodlySprinkler: "⚡",
-    MagnifyingGlass: "🔍", MasterSprinkler: "🏆", CleaningSpray: "🧴",
-    CleansingPetShard: "🪄", FavoriteTool: "⭐", HarvestTool: "🌾",
-    FriendshipPot: "🤝", MediumToy: "🧸", MediumTreat: "🍪",
-    GrandmasterSprinkler: "🌟", LevelupLollipop: "🍭",
+    "Watering Can": "🌊", "Trading Ticket": "🎫", Trowel: "🪓", "Recall Wrench": "🔧",
+    "Basic Sprinkler": "🌧", "Advanced Sprinkler": "💦", "Godly Sprinkler": "⚡",
+    "Magnifying Glass": "🔍", "Master Sprinkler": "🏆", "Cleaning Spray": "🧴",
+    "Cleansing PetShard": "🪄", "Favorite Tool": "⭐", "Harvest Tool": "🌾",
+    "Friendship Pot": "🤝", "Medium Toy": "🧸", "Medium Treat": "🍪",
+    "Grandmaster Sprinkler": "🌟", "Levelup Lollipop": "🍭",
 
     // Eggs
     "Common Egg": "🥚", "Uncommon Egg": "🥚", "Rare Egg": "🥚",
@@ -41,9 +41,9 @@ module.exports = {
     "Common Summer Egg": "🌞", "Rare Summer Egg": "🌞", ParadiseEgg: "🦩",
     OasisEgg: "🏝", DinosaurEgg: "🦖", PrimalEgg: "🦕",
     "Premium Primal Egg": "🦖", RainbowPremiumPrimalEgg: "🌈🦕",
-    ZenEgg: "🐕", GourmetEgg: "🍳", SproutEgg: "🌱",
-    EnchantedEgg: "🧚", FallEgg: "🍂", "Premium Fall Egg": "🍂",
-    JungleEgg: "🌳", SpookyEgg: "👻",
+    "Zen Egg": "🐕", "Gourmet Egg": "🍳", "Sprout Egg": "🌱",
+    "Enchanted Egg": "🧚", "Fall Egg": "🍂", "Premium Fall Egg": "🍂",
+    "Jungle Egg": "🌳", "Spooky Egg": "👻",
   },
 
   getEmoji(name) {
