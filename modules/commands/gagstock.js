@@ -2,9 +2,6 @@ const { PermissionsBitField, EmbedBuilder } = require("discord.js");
 const WebSocket = require("ws");
 const { setData, getData } = require("../../database.js");
 
-let lastGlobalUpdate = null;
-let lastSendTime = 0; // 🕒 anti-spam limiter (5s cooldown)
-
 module.exports = {
   config: {
     name: "gagstock",
@@ -32,11 +29,11 @@ module.exports = {
     "Grandmaster Sprinkler": "🌟", "Levelup Lollipop": "🍭",
     "Common Egg": "🥚", "Uncommon Egg": "🥚", "Rare Egg": "🥚",
     "Legendary Egg": "🥚", "Mythical Egg": "🥚", "Bug Egg": "🐛",
-    ExoticBugEgg: "🐞", "Night Egg": "🌙", "Premium Night Egg": "🌙",
-    BeeEgg: "🐝", AntiBeeEgg: "🐝", "Premium Anti Bee Egg": "🐝",
+    ExoticBugEgg: "🐞", Night Egg: "🌙", PremiumNightEgg: "🌙",
+    BeeEgg: "🐝", AntiBeeEgg: "🐝", PremiumAntiBeeEgg: "🐝",
     "Common Summer Egg": "🌞", "Rare Summer Egg": "🌞", ParadiseEgg: "🦩",
     OasisEgg: "🏝", DinosaurEgg: "🦖", PrimalEgg: "🦕",
-    "Premium Primal Egg": "🦖", RainbowPremiumPrimalEgg: "🌈🦕",
+    PremiumPrimalEgg: "🦖", RainbowPremiumPrimalEgg: "🌈🦕",
     "Zen Egg": "🐕", "Gourmet Egg": "🍳", "Sprout Egg": "🌱",
     "Enchanted Egg": "🧚", "Fall Egg": "🍂", "Premium Fall Egg": "🍂",
     "Jungle Egg": "🌳", "Spooky Egg": "👻",
@@ -55,7 +52,7 @@ module.exports = {
       ws.on("open", () => ws.send(JSON.stringify({ action: "getStock" })));
 
       ws.on("message", (data) => {
-        if (resolved) return; // 🧠 ignore duplicate WS packets
+        if (resolved) return;
         resolved = true;
 
         try {
@@ -89,7 +86,7 @@ module.exports = {
         const arr = items.filter((i) =>
           cat === "Seeds" ? i.type === "seed" :
           cat === "Gear" ? i.type === "gear" : 
-          cat === "Eggs" ? i.type === "egg"
+          cat === "Eggs" ? i.type === "egg" : []
         );
         return `**${cat}**\n${arr.map((i) => `• ${this.getEmoji(i.name)} **${i.name}** (${i.quantity})`).join("\n") || "❌ Empty"}`;
       })
@@ -147,15 +144,16 @@ module.exports = {
   // 🔁 Called every aligned check by main.js
   async checkForUpdate(client) {
     try {
-      const now = Date.now();
-      if (now - lastSendTime < 5000) return; // 🧊 ignore if <5s since last send
       const stockData = await this.fetchGAGStock();
       const currentUpdate = stockData?.data?.lastGlobalUpdate;
+      if (!currentUpdate) return;
 
-      if (!currentUpdate || currentUpdate === lastGlobalUpdate) return;
-      lastGlobalUpdate = currentUpdate;
-      lastSendTime = now;
+      // Load lastGlobalUpdate from DB
+      const lastSaved = await getData("gagstock/lastGlobalUpdate") || null;
+      if (currentUpdate === lastSaved) return; // ❌ No new update, do nothing
 
+      // ✅ Save new update timestamp
+      await setData("gagstock/lastGlobalUpdate", currentUpdate);
       console.log(`✅ [GAG] Stock updated at ${new Date().toLocaleTimeString()}`);
 
       const allData = (await getData("gagstock/discord")) || {};
