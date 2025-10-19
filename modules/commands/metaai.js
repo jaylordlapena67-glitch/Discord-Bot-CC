@@ -30,9 +30,9 @@ module.exports = {
       // Start typing indicator
       message.channel.sendTyping();
 
-      // 🔗 Call Kaiz API
+      // 🔗 Call Llama90B API
       const response = await axios.get(
-        `https://kaiz-apis.gleeze.com/api/llama3-turbo?ask=${encodeURIComponent(message.content)}&uid=${userId}&apikey=50ebc036-6604-46cd-ae13-0dcb52958bc8`
+        `https://betadash-api-swordslush-production.up.railway.app/Llama90b?ask=${encodeURIComponent(message.content)}`
       );
 
       // ✅ Extract AI response
@@ -42,7 +42,7 @@ module.exports = {
       const sendEmbed = async (text) => {
         const embed = new EmbedBuilder()
           .setColor(Colors.Blue)
-          .setAuthor({ name: "Llama 3-Turbo" })
+          .setAuthor({ name: "Llama 3.2-90B" })
           .setDescription(text)
           .setFooter({ text: `Reply to ${message.author.tag}` })
           .setTimestamp();
