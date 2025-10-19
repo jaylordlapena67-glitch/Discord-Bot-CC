@@ -28,6 +28,9 @@ module.exports = {
     userCooldowns[userId] = now;
 
     try {
+      // Start typing indicator
+      message.channel.sendTyping();
+
       // Call GPT API
       const response = await axios.get(
         `https://betadash-api-swordslush-production.up.railway.app/gpt4?ask=${encodeURIComponent(message.content)}`
@@ -39,7 +42,7 @@ module.exports = {
       const sendEmbed = async (text) => {
         const embed = new EmbedBuilder()
           .setColor(Colors.Purple)
-          .setAuthor({ name: "GPT Response" }) // 👈 small header text (like Aria-Ai)
+          .setAuthor({ name: "GPT Response" })
           .setDescription(text)
           .setFooter({ text: `Reply to ${message.author.tag}` })
           .setTimestamp();
