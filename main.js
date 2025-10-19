@@ -1,4 +1,7 @@
-// main.js
+// ===============================
+// main.js — Optimized Discord Bot Core
+// ===============================
+
 const {
   Client,
   GatewayIntentBits,
@@ -35,18 +38,20 @@ client.commands = new Collection();
 client.slashCommands = new Collection();
 client.events = new Map();
 
-// === CHANNELS ===
-const ARIA_CHANNEL_ID = "1428927739431227503"; // Aria-Ai channel
+// === CHANNEL CONFIG ===
+const ARIA_CHANNEL_ID = "1428927739431227503";
 const LOG_CHANNEL_ID = '1426904103534985317';
 const WELCOME_CHANNEL = '1427870606660997192';
 const GOODBYE_CHANNEL = '1427870731508781066';
 
-// === TIME ALIGNMENT FOR STOCK ===
+// ===============================
+// TIME ALIGNMENT FOR STOCK CHECK
+// ===============================
 function getNextAlignedTime() {
   const now = new Date();
+  const next = new Date(now);
   const minute = now.getMinutes();
   const nextMinute = Math.ceil(minute / 5) * 5;
-  const next = new Date(now);
   next.setMinutes(nextMinute === 60 ? 0 : nextMinute, 0, 0);
   if (nextMinute === 60) next.setHours(now.getHours() + 1);
   return next;
@@ -59,7 +64,9 @@ async function waitUntilNextAligned() {
   await new Promise(res => setTimeout(res, delay));
 }
 
-// === EMOJI DETECTION & NICKNAME HANDLING ===
+// ===============================
+// EMOJI + NICKNAME HANDLER
+// ===============================
 function extractEmojis(text) {
   if (!text) return [];
   const match = text.match(/^([\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F]+)/u);
@@ -88,21 +95,24 @@ async function applyHighestRoleEmoji(member) {
   }
 }
 
-// === READY EVENT ===
+// ===============================
+// READY EVENT
+// ===============================
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
+  // Load all commands & events
   try { loadCommands(client); } catch (e) { console.warn('loadCommands err', e); }
   try { await loadSlashCommands(client); } catch (e) { console.warn('loadSlashCommands err', e); }
   try { loadEvents(client); } catch (e) { console.warn('loadEvents err', e); }
 
-  // === AUTO-STOCK MODULES ===
+  // Load stock modules
   const pvbstock = client.commands.get("pvbstock");
   const gagstock = client.commands.get("gagstock");
   if (pvbstock?.onReady) await pvbstock.onReady(client);
   if (gagstock?.onReady) await gagstock.onReady(client);
 
-  // === AUTO-STOCK LOOP (every aligned 5 mins) ===
+  // Stock check loop every aligned 5 mins
   (async function alignedStockLoop() {
     console.log("🔁 Starting aligned stock check loop...");
     while (true) {
@@ -114,7 +124,6 @@ client.once('ready', async () => {
         try {
           const pvbChanged = pvbstock?.checkForUpdate ? await pvbstock.checkForUpdate(client) : false;
           const gagChanged = gagstock?.checkForUpdate ? await gagstock.checkForUpdate(client) : false;
-
           if (pvbChanged || gagChanged) {
             console.log("✅ Stock updated — notifications sent!");
             updated = true;
@@ -126,12 +135,12 @@ client.once('ready', async () => {
         await new Promise(res => setTimeout(res, 1000));
       }
 
-      if (!updated) console.log("⌛ No stock update found — waiting for next aligned time.");
+      if (!updated) console.log("⌛ No stock update found — waiting next aligned time.");
       await new Promise(res => setTimeout(res, 1000));
     }
   })();
 
-  // === INITIAL EMOJI NICKNAME SYNC ===
+  // Update nickname emojis
   console.log("🔄 Updating emoji nicknames for all members...");
   for (const guild of client.guilds.cache.values()) {
     const members = await guild.members.fetch();
@@ -140,7 +149,9 @@ client.once('ready', async () => {
   console.log("✅ Nickname emojis updated for all members!");
 });
 
-// === MEMBER EVENTS ===
+// ===============================
+// MEMBER EVENTS
+// ===============================
 client.on(Events.GuildMemberAdd, async (member) => {
   const channel = member.guild.channels.cache.get(WELCOME_CHANNEL);
   if (channel) {
@@ -153,7 +164,6 @@ client.on(Events.GuildMemberAdd, async (member) => {
       .setTimestamp();
     await channel.send({ embeds: [embed] });
   }
-
   await applyHighestRoleEmoji(member);
 });
 
@@ -172,11 +182,13 @@ client.on(Events.GuildMemberUpdate, async (_, newMember) => {
   await applyHighestRoleEmoji(newMember);
 });
 
-// === MESSAGE HANDLER ===
+// ===============================
+// MESSAGE HANDLER
+// ===============================
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot || !message.guild) return;
 
-  // === WFL REACTION ===
+  // === Auto WFL React ===
   const wflRegex = /\b(?:win\s*or\s*lose|win\s*lose|w[\s\/\.\-]*f[\s\/\.\-]*l)\b/i;
   if (wflRegex.test(message.content)) {
     try {
@@ -186,38 +198,37 @@ client.on(Events.MessageCreate, async (message) => {
     } catch {}
   }
 
-  // === WARNING MODULE ===
+  // === Warning system ===
   try { await warnModule.handleEvent({ message }); } catch (err) { console.error(err); }
 
-  // === PREFIX COMMANDS ===
+  // === Prefix Commands ===
   const prefix = config.prefix;
   if (message.content.startsWith(prefix)) {
     const args = message.content.slice(prefix.length).trim().split(/\s+/);
     const commandName = args.shift()?.toLowerCase();
-    const command = client.commands.get(commandName) || client.commands.find(cmd => cmd.config?.aliases?.includes(commandName));
+    const command = client.commands.get(commandName)
+      || client.commands.find(cmd => cmd.config?.aliases?.includes(commandName));
     if (command) {
       try { await command.letStart({ args, message, discord: { client } }); } catch (error) { console.error(error); }
       return;
     }
   }
 
-  // === GPT MODULE AUTO-REPLY ===
+  // === GPT / META / ARIA Modules ===
   if (gptModule && message.channel.id === gptModule.config.channelId) {
     try { await gptModule.letStart({ message }); } catch (err) { console.error("GPT module error:", err); }
   }
-
-  // === META-AI MODULE AUTO-REPLY ===
   if (metaModule && message.channel.id === metaModule.config.channelId) {
-    try { await metaModule.letStart({ message }); } catch (err) { console.error("Meta-Ai module error:", err); }
+    try { await metaModule.letStart({ message }); } catch (err) { console.error("Meta-AI error:", err); }
   }
-
-  // === ARIA-AI MODULE AUTO-REPLY ===
   if (ariaModule && message.channel.id === ARIA_CHANNEL_ID) {
-    try { await ariaModule.letStart({ message }); } catch (err) { console.error("Aria-Ai module error:", err); }
+    try { await ariaModule.letStart({ message }); } catch (err) { console.error("Aria-AI error:", err); }
   }
 });
 
-// === ADMIN / MOD LOGS ===
+// ===============================
+// ADMIN / MOD LOGS
+// ===============================
 client.on(Events.GuildAuditLogEntryCreate, async (entry) => {
   const logChannel = entry.guild.channels.cache.get(LOG_CHANNEL_ID);
   if (!logChannel) return;
@@ -253,5 +264,7 @@ client.on(Events.GuildAuditLogEntryCreate, async (entry) => {
   }
 });
 
-// === LOGIN ===
+// ===============================
+// LOGIN
+// ===============================
 client.login(config.token).catch(err => console.error('Login failed:', err));
