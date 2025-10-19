@@ -2,6 +2,8 @@ const { PermissionsBitField, EmbedBuilder } = require("discord.js");
 const WebSocket = require("ws");
 const { setData, getData } = require("../../database.js");
 
+const lastSendTimestamps = {}; // Anti-spam per channel
+
 module.exports = {
   config: {
     name: "gagstock",
@@ -76,6 +78,11 @@ module.exports = {
   },
 
   async sendStock(client, channelId, items) {
+    const now = Date.now();
+    const lastSent = lastSendTimestamps[channelId] || 0;
+    if (now - lastSent < 5000) return; // 5-second per-channel cooldown
+    lastSendTimestamps[channelId] = now;
+
     const channel = await client.channels.fetch(channelId).catch(() => null);
     if (!channel) return;
 
@@ -84,7 +91,7 @@ module.exports = {
         const arr = items.filter((i) => 
           cat === "Seeds" ? i.type === "seed" :
           cat === "Gear" ? i.type === "gear" :
-          i.type === "Eggs" ? i.type === "egg" : false
+          cat === "Eggs" ? i.type === "egg" : false
         );
         return `**${cat}**\n${arr.map((i) => `• ${this.getEmoji(i.name)} **${i.name}** (${i.quantity})`).join("\n") || "❌ Empty"}`;
       })
@@ -148,7 +155,7 @@ module.exports = {
       const currentUpdate = stockData?.data?.lastGlobalUpdate;
       if (!currentUpdate) return;
 
-      // Load lastGlobalUpdate from DB
+      // Only send if there's a new global update
       const lastSaved = await getData("gagstock/lastGlobalUpdate") || null;
       if (currentUpdate === lastSaved) return;
 
