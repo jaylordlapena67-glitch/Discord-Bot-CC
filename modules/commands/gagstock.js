@@ -1,5 +1,4 @@
 const { EmbedBuilder } = require("discord.js");
-const { setData, getData } = require("../../database.js");
 const WebSocket = require("ws");
 
 let lastGlobalUpdate = null;
@@ -49,56 +48,6 @@ module.exports = {
     return this.ITEM_EMOJI[name.replace(/ Seed$/i, "").trim()] || "❔";
   },
 
-  formatItems(items) {
-    if (!items?.length) return "❌ Empty";
-    // Group items by type
-    const groups = {
-      Seeds: [],
-      Gear: [],
-      Eggs: [],
-    };
-    for (const i of items) {
-      if (i.type === "seed") groups.Seeds.push(i);
-      else if (i.type === "gear") groups.Gear.push(i);
-      else if (i.type === "egg") groups.Eggs.push(i);
-    }
-
-    const formatGroup = (title, arr) =>
-      `**${title}**\n${arr.map(x => `• ${this.getEmoji(x.name)} **${x.name}** (${x.quantity ?? "?"})`).join("\n") || "❌ Empty"}`;
-
-    return [formatGroup("Seeds", groups.Seeds), formatGroup("Gear", groups.Gear), formatGroup("Eggs", groups.Eggs)].join("\n\n");
-  },
-
-  async fetchGAGStock() {
-    return new Promise(resolve => {
-      const ws = new WebSocket("wss://ws.growagardenpro.com"); // replace with actual endpoint
-      ws.on("open", () => ws.send(JSON.stringify({ action: "getStock" })));
-      ws.on("message", data => {
-        resolve(JSON.parse(data));
-        ws.close();
-      });
-      ws.on("error", err => {
-        console.error("❌ GAG WS error:", err);
-        resolve({});
-      });
-    });
-  },
-
-  async sendStock(client, items) {
-    const channelId = "1426901600030429317"; // replace with your target channel
-    const channel = await client.channels.fetch(channelId).catch(() => null);
-    if (!channel) return;
-
-    const description = this.formatItems(items);
-    const embed = new EmbedBuilder()
-      .setTitle(`🌱 GAG Stock Update`)
-      .setDescription(description)
-      .setColor(0xff0080)
-      .setTimestamp();
-
-    await channel.send({ embeds: [embed] });
-  },
-
   getNextAligned5Min() {
     const now = new Date();
     const minutes = now.getMinutes();
@@ -109,40 +58,77 @@ module.exports = {
     return next;
   },
 
-  async onReady(client) {
-    console.log("🔁 GAG module ready — fetching lastGlobalUpdate...");
-    try {
-      const stockData = await this.fetchGAGStock();
-      if (stockData.lastGlobalUpdate) lastGlobalUpdate = stockData.lastGlobalUpdate;
-      console.log("✅ lastGlobalUpdate set:", lastGlobalUpdate);
-
-      const loop = async () => {
-        const nextTime = this.getNextAligned5Min();
-        const delay = nextTime - Date.now();
-        console.log(`⏳ Waiting until next 5-min mark: ${nextTime.toLocaleTimeString()}`);
-        setTimeout(async () => {
-          let updated = false;
-
-          // check every second until change is detected
-          for (let i = 0; i < 300; i++) { // max 5 min
-            const stockData = await this.fetchGAGStock();
-            if (stockData.lastGlobalUpdate && stockData.lastGlobalUpdate !== lastGlobalUpdate) {
-              lastGlobalUpdate = stockData.lastGlobalUpdate;
-              await this.sendStock(client, stockData.items || []);
-              updated = true;
-              break;
-            }
-            await new Promise(res => setTimeout(res, 1000));
-          }
-
-          if (!updated) console.log("⌛ No stock changes detected in this interval.");
-          loop(); // repeat forever
-        }, delay);
-      };
-
-      loop();
-    } catch (err) {
-      console.error("❌ Error initializing GAG module loop:", err);
-    }
+  async fetchGAGStock() {
+    return new Promise(resolve => {
+      const ws = new WebSocket("wss://ws.growagardenpro.com"); // GAG endpoint
+      ws.on("open", () => ws.send(JSON.stringify({ action: "getStock" })));
+      ws.on("message", data => {
+        try {
+          resolve(JSON.parse(data));
+        } catch {
+          resolve({});
+        }
+        ws.close();
+      });
+      ws.on("error", err => {
+        console.error("❌ GAG WS error:", err);
+        resolve({});
+      });
+    });
   },
+
+  async sendStock(client, items) {
+    const channelId = "1426901600030429317"; // Discord channel
+    const channel = await client.channels.fetch(channelId).catch(() => null);
+    if (!channel) return;
+
+    const description = Object.entries({
+      Seeds: items.filter(i => i.type === "seed"),
+      Gear: items.filter(i => i.type === "gear"),
+      Eggs: items.filter(i => i.type === "egg"),
+    })
+      .map(([cat, arr]) =>
+        `**${cat}**\n${arr.map(i => `• ${this.getEmoji(i.name)} **${i.name}** (${i.quantity})`).join("\n") || "❌ Empty"}`
+      )
+      .join("\n\n");
+
+    const embed = new EmbedBuilder()
+      .setTitle("🪴 Grow a Garden Stock Update")
+      .setDescription(description)
+      .setColor(0xff0080)
+      .setTimestamp();
+
+    await channel.send({ embeds: [embed] });
+  },
+
+  async onReady(client) {
+    console.log("🔁 GAG module ready — starting auto-stock loop...");
+
+    const loop = async () => {
+      const nextTime = this.getNextAligned5Min();
+      const delay = nextTime - Date.now();
+      console.log(`⏳ Waiting until next 5-min mark: ${nextTime.toLocaleTimeString()}`);
+      setTimeout(async () => {
+        const stockData = await this.fetchGAGStock();
+        if (stockData?.data?.lastGlobalUpdate && stockData.data.lastGlobalUpdate !== lastGlobalUpdate) {
+          lastGlobalUpdate = stockData.data.lastGlobalUpdate;
+
+          const allItems = [
+            ...(stockData.data.seeds || []),
+            ...(stockData.data.gear || []),
+            ...(stockData.data.events || []),
+            ...(stockData.data.honey || [])
+          ].filter(i => ["seed", "gear", "egg"].includes(i.type));
+
+          if (allItems.length > 0) await this.sendStock(client, allItems);
+        } else {
+          console.log("⌛ No stock changes detected this interval.");
+        }
+
+        loop(); // repeat forever
+      }, delay);
+    };
+
+    loop();
+  }
 };
