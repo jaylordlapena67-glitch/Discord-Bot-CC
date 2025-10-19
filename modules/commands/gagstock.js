@@ -19,11 +19,11 @@ module.exports = {
     Carrot: "🥕", Strawberry: "🍓", Blueberry: "🫐", Tomato: "🍅",
     Corn: "🌽", Daffodil: "🌼", Watermelon: "🍉", Pumpkin: "🎃",
     Apple: "🍎", Bamboo: "🎋", Coconut: "🥥", Cactus: "🌵",
-    DragonFruit: "🐉", Mango: "🥭", Grape: "🍇", Mushroom: "🍄",
-    Pepper: "🌶", Beanstalk: "🌱", EmberLily: "🌺", SugarApple: "🍏",
-    BurningBud: "🔥", GiantPinecone: "🌲", ElderStrawberry: "🍓",
-    Romanesco: "🥦", CrimsonThorn: "🌹", GreatPumpkin: "🎃", Potato: "🥔",
-    BrusselsSprouts: "🥬", Cocomango: "🥭", Broccoli: "🥦", OrangeTulip: "🌷",
+    "Dragon Fruit": "🐉", Mango: "🥭", Grape: "🍇", Mushroom: "🍄",
+    Pepper: "🌶", Beanstalk: "🌱", "Ember Lily": "🌺", "Sugar Apple": "🍏",
+    "Burning Bud": "🔥", "Giant Pinecone": "🌲", "Elder Strawberry": "🍓",
+    Romanesco: "🥦", "Crimson Thorn": "🌹", "Great Pumpkin": "🎃", Potato: "🥔",
+    "Brussels Sprouts": "🥬", Cocomango: "🥭", Broccoli: "🥦", "Orange Tulip": "🌷",
 
     // Gear
     "Watering Can": "🌊", "Trading Ticket": "🎫", Trowel: "🪓", "Recall Wrench": "🔧",
