@@ -41,7 +41,7 @@ const LOG_CHANNEL_ID = '1426904103534985317';
 const WELCOME_CHANNEL = '1427870606660997192';
 const GOODBYE_CHANNEL = '1427870731508781066';
 
-// === ALIGNED TIME CHECK FOR STOCK ===
+// === TIME ALIGNMENT FOR STOCK ===
 function getNextAlignedTime() {
   const now = new Date();
   const minute = now.getMinutes();
@@ -59,7 +59,7 @@ async function waitUntilNextAligned() {
   await new Promise(res => setTimeout(res, delay));
 }
 
-// === EMOJI DETECTION & NICKNAME LOGIC ===
+// === EMOJI DETECTION & NICKNAME HANDLING ===
 function extractEmojis(text) {
   if (!text) return [];
   const match = text.match(/^([\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F]+)/u);
@@ -96,40 +96,37 @@ client.once('ready', async () => {
   try { await loadSlashCommands(client); } catch (e) { console.warn('loadSlashCommands err', e); }
   try { loadEvents(client); } catch (e) { console.warn('loadEvents err', e); }
 
-  // === PVBR & GAG auto-stock resume ===
+  // === AUTO-STOCK MODULES ===
   const pvbstock = client.commands.get("pvbstock");
   const gagstock = client.commands.get("gagstock");
   if (pvbstock?.onReady) await pvbstock.onReady(client);
   if (gagstock?.onReady) await gagstock.onReady(client);
 
-  // === ALIGNED CHECK LOOP (Anti-Spam) ===
-  (async function alignedCheckLoop() {
-    console.log("🔁 Starting aligned check loop...");
+  // === AUTO-STOCK LOOP (every aligned 5 mins) ===
+  (async function alignedStockLoop() {
+    console.log("🔁 Starting aligned stock check loop...");
     while (true) {
       await waitUntilNextAligned();
-      console.log(`🕒 Aligned check started (${new Date().toLocaleTimeString()})`);
+      console.log(`🕒 Stock check started (${new Date().toLocaleTimeString()})`);
 
       let updated = false;
-
-      // Check every second for up to 240s (4 minutes)
       for (let i = 0; i < 240; i++) {
-        if (pvbstock?.checkForUpdate && gagstock?.checkForUpdate) {
-          const pvbChanged = await pvbstock.checkForUpdate(client);
-          const gagChanged = await gagstock.checkForUpdate(client);
+        try {
+          const pvbChanged = pvbstock?.checkForUpdate ? await pvbstock.checkForUpdate(client) : false;
+          const gagChanged = gagstock?.checkForUpdate ? await gagstock.checkForUpdate(client) : false;
+
           if (pvbChanged || gagChanged) {
             console.log("✅ Stock updated — notifications sent!");
             updated = true;
             break;
           }
+        } catch (err) {
+          console.error("⚠️ Stock check error:", err);
         }
         await new Promise(res => setTimeout(res, 1000));
       }
 
-      if (!updated) {
-        console.log("⌛ No stock update found — waiting for next aligned time.");
-      }
-
-      // Safety delay before looping again
+      if (!updated) console.log("⌛ No stock update found — waiting for next aligned time.");
       await new Promise(res => setTimeout(res, 1000));
     }
   })();
@@ -144,8 +141,6 @@ client.once('ready', async () => {
 });
 
 // === MEMBER EVENTS ===
-
-// 🔹 When new member joins
 client.on(Events.GuildMemberAdd, async (member) => {
   const channel = member.guild.channels.cache.get(WELCOME_CHANNEL);
   if (channel) {
@@ -159,11 +154,9 @@ client.on(Events.GuildMemberAdd, async (member) => {
     await channel.send({ embeds: [embed] });
   }
 
-  // Apply emoji nickname silently
   await applyHighestRoleEmoji(member);
 });
 
-// 🔹 When a member leaves
 client.on(Events.GuildMemberRemove, async (member) => {
   const channel = member.guild.channels.cache.get(GOODBYE_CHANNEL);
   if (!channel) return;
@@ -175,7 +168,6 @@ client.on(Events.GuildMemberRemove, async (member) => {
   await channel.send({ embeds: [embed] });
 });
 
-// 🔹 When member roles are updated
 client.on(Events.GuildMemberUpdate, async (_, newMember) => {
   await applyHighestRoleEmoji(newMember);
 });
@@ -187,7 +179,11 @@ client.on(Events.MessageCreate, async (message) => {
   // === WFL REACTION ===
   const wflRegex = /\b(?:win\s*or\s*lose|win\s*lose|w[\s\/\.\-]*f[\s\/\.\-]*l)\b/i;
   if (wflRegex.test(message.content)) {
-    try { await message.react('🇼'); await message.react('🇫'); await message.react('🇱'); } catch {}
+    try {
+      await message.react('🇼');
+      await message.react('🇫');
+      await message.react('🇱');
+    } catch {}
   }
 
   // === WARNING MODULE ===
@@ -221,7 +217,7 @@ client.on(Events.MessageCreate, async (message) => {
   }
 });
 
-// === ADMIN / MOD ACTION LOGGING ===
+// === ADMIN / MOD LOGS ===
 client.on(Events.GuildAuditLogEntryCreate, async (entry) => {
   const logChannel = entry.guild.channels.cache.get(LOG_CHANNEL_ID);
   if (!logChannel) return;
