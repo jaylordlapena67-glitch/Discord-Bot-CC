@@ -90,13 +90,16 @@ module.exports = {
   formatItems(items) {
     if (!items?.length) return "❌ Empty";
     const grouped = {};
+
+    // Group by rarity and format item info
     for (const i of items) {
       const type = this.getRarity(i.name);
       if (!grouped[type]) grouped[type] = [];
       grouped[type].push(
-        `• ${this.getEmoji(i.name)} **${i.name.replace(/ Seed$/i, "")}** (${i.currentStock ?? "?"})`
+        `• ${this.getEmoji(i.name)} **${i.name.replace(/ Seed$/i, "")}** (${i.currentStock ?? "?"}, Price: ${i.currentPrice ?? "?"})`
       );
     }
+
     const order = ["common", "rare", "epic", "legendary", "mythic", "godly", "secret", "unknown"];
     return order
       .filter(cat => grouped[cat])
@@ -118,9 +121,11 @@ module.exports = {
     const { items, updatedAt } = await this.fetchPVBRStock();
     if (!items?.length) return channel.send("⚠️ Failed to fetch PVBR stock.");
 
+    // Group items by category
     const seeds = items.filter(i => i.category === "seed");
     const gear = items.filter(i => i.category === "gear");
 
+    // Format and display the items
     const seedsText = this.formatItems(seeds);
     const gearText = this.formatItems(gear);
 
@@ -140,6 +145,7 @@ module.exports = {
 
     const pingRoles = [];
 
+    // Add roles for available items
     for (const item of items) {
       const name = item.name.replace(/ Seed$/i, "").trim();
       const stock = item.currentStock ?? 0;
